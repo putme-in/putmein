@@ -4,40 +4,7 @@ import fs from "fs";
 import path from "path";
 import { verifyToken } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-
-export interface EnvVariable {
-  key: string;
-  value: string;
-}
-
-// Parses raw .env file string into key-value pairs
-function parseEnv(content: string): EnvVariable[] {
-  const vars: EnvVariable[] = [];
-  const lines = content.split(/\r?\n/);
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    const eqIdx = trimmed.indexOf("=");
-    if (eqIdx <= 0) continue;
-
-    const key = trimmed.slice(0, eqIdx).trim();
-    let value = trimmed.slice(eqIdx + 1).trim();
-
-    // Strip wrapping quotes if matching
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-
-    vars.push({ key, value });
-  }
-
-  return vars;
-}
+import { toPublicEnvResponse } from "@/lib/env";
 
 // Helper to escape regex special characters
 function escapeRegExp(string: string) {
@@ -76,14 +43,14 @@ export async function GET(
       console.warn("Error reading .env:", readErr);
     }
 
-    const vars = parseEnv(rawContent);
+    if (new URL(req.url).searchParams.get("view") === "raw") {
+      return NextResponse.json(
+        { exists, rawContent },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
 
-    return NextResponse.json({
-      exists,
-      envPath: envFilePath,
-      vars,
-      rawContent,
-    });
+    return NextResponse.json(toPublicEnvResponse(exists, rawContent));
   } catch (err) {
     console.error("GET /api/projects/[id]/env:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
@@ -172,13 +139,9 @@ export async function POST(
     // Write atomically
     await fs.promises.writeFile(envFilePath, newContent, "utf-8");
 
-    const parsedVars = parseEnv(newContent);
-
     return NextResponse.json({
       success: true,
-      envPath: envFilePath,
-      vars: parsedVars,
-      rawContent: newContent,
+      ...toPublicEnvResponse(true, newContent),
     });
   } catch (err) {
     console.error("POST /api/projects/[id]/env:", err);

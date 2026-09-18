@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "test:env": "node --experimental-strip-types --test scripts/env-redaction.test.mjs",
     "test:github-manifest": "node --experimental-strip-types --test scripts/github-manifest.test.mjs",
     "postbuild": "node scripts/copy-standalone-assets.js",
     "start": "node scripts/start-standalone.js",

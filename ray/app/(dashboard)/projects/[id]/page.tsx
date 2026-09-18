@@ -195,12 +195,12 @@ export default function ProjectDetailPage({
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
   const [rawEnv, setRawEnv] = useState("");
   const [loadingEnv, setLoadingEnv] = useState(false);
+  const [loadingRawEnv, setLoadingRawEnv] = useState(false);
   const [newEnvKey, setNewEnvKey] = useState("");
   const [newEnvValue, setNewEnvValue] = useState("");
   const [addingEnv, setAddingEnv] = useState(false);
   const [savingRawEnv, setSavingRawEnv] = useState(false);
   const [rawEnvMode, setRawEnvMode] = useState(false);
-  const [unmaskedKeys, setUnmaskedKeys] = useState<Set<string>>(new Set());
   const [envActionMessage, setEnvActionMessage] = useState("");
 
   // Files Tab State
@@ -278,8 +278,7 @@ export default function ProjectDetailPage({
       const res = await fetch(`/api/projects/${id}/env`);
       if (res.ok) {
         const data = await res.json();
-        setEnvVars(data.variables || []);
-        setRawEnv(data.rawContent || "");
+        setEnvVars(data.vars || []);
       }
     } catch { /* silent */ }
     finally { setLoadingEnv(false); }
@@ -598,7 +597,9 @@ export default function ProjectDetailPage({
   const handleDeleteEnvVar = async (key: string) => {
     try {
       const res = await fetch(`/api/projects/${id}/env?key=${encodeURIComponent(key)}`, {
-        method: "DELETE",
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", key }),
       });
       if (res.ok) {
         setEnvActionMessage(`Deleted ${key} from .env`);
@@ -608,32 +609,54 @@ export default function ProjectDetailPage({
     } catch { /* silent */ }
   };
 
-  // Save Raw .env file
+  // Load the raw file only when the user explicitly opens the editor.
+  const handleOpenRawEnv = async () => {
+    setLoadingRawEnv(true);
+    setEnvActionMessage("");
+    try {
+      const res = await fetch(`/api/projects/${id}/env?view=raw`);
+      if (!res.ok) {
+        setEnvActionMessage("Unable to load the raw .env file");
+        return;
+      }
+      const data = await res.json();
+      setRawEnv(data.rawContent || "");
+      setRawEnvMode(true);
+    } catch {
+      setEnvActionMessage("Unable to load the raw .env file");
+    } finally {
+      setLoadingRawEnv(false);
+    }
+  };
+
+  const handleCloseRawEnv = () => {
+    setRawEnvMode(false);
+    setRawEnv("");
+  };
+
+  // Save the raw .env file without returning its contents in the response.
   const handleSaveRawEnv = async () => {
     setSavingRawEnv(true);
     setEnvActionMessage("");
     try {
       const res = await fetch(`/api/projects/${id}/env`, {
-        method: "PUT",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawContent: rawEnv }),
+        body: JSON.stringify({ action: "raw", content: rawEnv }),
       });
       if (res.ok) {
+        handleCloseRawEnv();
         setEnvActionMessage("Saved .env configuration");
         setTimeout(() => setEnvActionMessage(""), 3000);
         fetchEnvVars();
+      } else {
+        setEnvActionMessage("Unable to save the .env file");
       }
-    } catch { /* silent */ }
-    finally { setSavingRawEnv(false); }
-  };
-
-  const toggleMask = (key: string) => {
-    setUnmaskedKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    } catch {
+      setEnvActionMessage("Unable to save the .env file");
+    } finally {
+      setSavingRawEnv(false);
+    }
   };
 
   // Save AI Memory Draft
@@ -1485,10 +1508,11 @@ export default function ProjectDetailPage({
                     </div>
                     <button
                       type="button"
-                      onClick={() => setRawEnvMode(!rawEnvMode)}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white/[0.05] hover:bg-white/10 text-white/70 hover:text-white border border-white/[0.08] transition-all flex-shrink-0 cursor-pointer"
+                      onClick={rawEnvMode ? handleCloseRawEnv : handleOpenRawEnv}
+                      disabled={loadingRawEnv}
+                      className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white/[0.05] hover:bg-white/10 text-white/70 hover:text-white border border-white/[0.08] transition-all flex-shrink-0 cursor-pointer disabled:opacity-50"
                     >
-                      {rawEnvMode ? "Structured View" : "Raw .env Editor"}
+                      {loadingRawEnv ? "Loading..." : rawEnvMode ? "Structured View" : "Raw .env Editor"}
                     </button>
                   </div>
 
@@ -1499,17 +1523,23 @@ export default function ProjectDetailPage({
                   )}
 
                   {rawEnvMode ? (
-                    /* Raw Editor Mode */
                     <div className="space-y-3 mt-4">
                       <textarea
                         rows={10}
                         value={rawEnv}
                         onChange={(e) => setRawEnv(e.target.value)}
-                        placeholder="# Define your .env keys here&#10;PORT=4000&#10;DATABASE_URL=..."
+                        placeholder="# Define your .env keys here\nPORT=4000\nDATABASE_URL=..."
                         className="w-full bg-[#121212] border border-white/10 focus:border-white/25 focus:outline-none font-mono text-xs text-white p-3.5 leading-relaxed rounded-xl"
                         style={{ resize: "vertical" }}
                       />
                       <div className="flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={handleCloseRawEnv}
+                          className="text-white/60 hover:text-white text-xs px-3 py-2 rounded-xl border border-white/[0.08] transition-all cursor-pointer"
+                        >
+                          Cancel
+                        </button>
                         <button
                           type="button"
                           onClick={handleSaveRawEnv}
@@ -1522,8 +1552,7 @@ export default function ProjectDetailPage({
                       </div>
                     </div>
                   ) : (
-                    /* Structured Key-Value Mode */
-                    <div className="space-y-4 mt-4">
+                  <div className="space-y-4 mt-4">
                       {/* Add Variable Form */}
                       <form onSubmit={handleAddEnvVar} className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 items-end p-4 rounded-xl bg-[#111111] border border-white/[0.06]">
                         <div className="sm:col-span-2">
@@ -1578,23 +1607,11 @@ export default function ProjectDetailPage({
                             </thead>
                             <tbody className="divide-y divide-white/[0.04]">
                               {envVars.map((v) => {
-                                const isUnmasked = unmaskedKeys.has(v.key);
                                 return (
                                   <tr key={v.key} className="hover:bg-white/[0.02] transition-colors">
                                     <td className="py-2.5 px-3.5 text-white font-semibold">{v.key}</td>
                                     <td className="py-2.5 px-3.5 text-white/60">
-                                      <div className="flex items-center gap-2">
-                                        <span className="truncate max-w-xs">
-                                          {isUnmasked ? v.value : "••••••••••••••••"}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          onClick={() => toggleMask(v.key)}
-                                          className="text-[10px] text-white/40 hover:text-white transition-colors cursor-pointer"
-                                        >
-                                          {isUnmasked ? "Hide" : "Show"}
-                                        </button>
-                                      </div>
+                                      <span className="truncate max-w-xs">{v.value}</span>
                                     </td>
                                     <td className="py-2.5 px-3.5 text-right">
                                       <button
@@ -1613,7 +1630,7 @@ export default function ProjectDetailPage({
                           </table>
                         </div>
                       )}
-                    </div>
+                  </div>
                   )}
                 </div>
 
