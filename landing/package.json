@@ -29,7 +29,7 @@
     "next": "^16.1.7",
     "postprocessing": "^6.38.3",
     "prisma": "^7.5.0",
-    "react": "19.2.3",
+    "react": "19.3.0",
     "react-dom": "19.2.3",
     "schema-dts": "^1.1.5",
     "shadcn": "^4.0.8",
