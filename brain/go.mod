@@ -6,7 +6,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
-	github.com/yuin/goldmark v1.7.4
+	github.com/yuin/goldmark v1.8.6
 )
 
 require (
