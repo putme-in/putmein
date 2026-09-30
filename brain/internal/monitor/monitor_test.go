@@ -59,9 +59,7 @@ func TestPauseProjectKeepsServiceLockWhileStoppingProject(t *testing.T) {
 	if state.cancel != nil || state.project.Status != StatusPaused {
 		t.Fatalf("unexpected project state after pause: %+v", state.project)
 	}
-import (
-	"testing"
-)
+}
 
 func TestLogPathsSnapshotIsIndependentOfProject(t *testing.T) {
 	service := &Service{}

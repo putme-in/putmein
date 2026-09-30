@@ -6,6 +6,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/putme-in/putmein/actions/workflows/ci.yml"><img src="https://github.com/putme-in/putmein/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
   <a href="https://www.npmjs.com/package/putmein"><img src="https://img.shields.io/npm/v/putmein?style=flat-square&label=npm" alt="npm version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License: MIT"></a>
   <a href="https://discord.gg/XX9qWbaTHQ"><img src="https://img.shields.io/discord/1548643490945048690?label=discord&logo=discord&logoColor=white&color=5865F2&style=flat-square?v" alt="Discord"></a>
@@ -112,6 +113,26 @@ npm run build
 # Start services locally
 npm start
 ```
+
+---
+
+## Testing
+
+PutmeIn includes automated unit and integration tests across each component:
+
+```bash
+# 1. Run root CLI and installer safety tests
+npm test
+npm run test:installer
+npm run test:env-parser
+
+# 2. Run Ray (Next.js) unit and regression tests
+cd ray && npm test
+
+# 3. Run Brain (Go) test suite with data race detection
+cd brain && go test -v -race ./...
+```
+
 ---
 
 ## Contributing

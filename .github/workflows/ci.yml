@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # -------------------------------------------------------------
+  # 1. BRAIN CI (Go Engine: Monitors, AI, Container Supervisor)
+  # -------------------------------------------------------------
+  brain-ci:
+    name: Brain (Go Backend)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: brain
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: brain/go.sum
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Vet & Static Analysis
+        run: go vet ./...
+
+      - name: Run Tests with Race Detector
+        run: go test -v -race -timeout 3m ./...
+
+      - name: Build Verification
+        run: go build -v -o /dev/null .
+
+  # -------------------------------------------------------------
+  # 2. RAY CI (Next.js Dashboard, API Gateway, Auth)
+  # -------------------------------------------------------------
+  ray-ci:
+    name: Ray (Next.js Console)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ray
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: ray/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run Unit Tests
+        run: npm test
+
+      - name: Build Verification
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+          JWT_SECRET: "ci-dummy-jwt-secret-minimum-32-chars-long"
+          DATABASE_URL: "mysql://root:@127.0.0.1:3306/putmein"
+
+  # -------------------------------------------------------------
+  # 3. ROOT CLI & INSTALLER SAFETY
+  # -------------------------------------------------------------
+  root-ci:
+    name: Root CLI & Installer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate Root package.json
+        run: node -e "JSON.parse(require('fs').readFileSync('package.json'))"
+
+      - name: Install Root Dependencies
+        run: npm install
+
+      - name: Run CLI Tests
+        run: npm test
+
+      - name: Run Installer Safety & Env Parser Tests
+        run: |
+          npm run test:installer
+          npm run test:env-parser
+
+      - name: Lint Shell Scripts with ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: 'landing/public'
+
+  # -------------------------------------------------------------
+  # 4. LANDING CI (Marketing Site & Docs)
+  # -------------------------------------------------------------
+  landing-ci:
+    name: Landing Page
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: landing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: landing/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Build Verification
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1

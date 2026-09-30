@@ -25,11 +25,11 @@
     "status": "node bin/ray.js status",
     "logs": "node bin/ray.js logs",
     "cohen": "node bin/ray.js cohen",
-    "test:env-parser": "node scripts/test-env-parser.js"
+    "test:env-parser": "node scripts/test-env-parser.js",
+    "test:installer": "node scripts/test-installer-safety.js"
   },
   "dependencies": {
     "dotenv": "^16.6.1"
-    "test:installer": "node scripts/test-installer-safety.js"
   },
   "keywords": [
     "putmein",

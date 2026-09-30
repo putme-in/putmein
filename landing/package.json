@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "echo 'No tests yet for landing' && exit 0",
     "lint": "eslint"
   },
   "prisma": {
