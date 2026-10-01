@@ -97,6 +97,9 @@ export async function POST(req: NextRequest) {
       projectId: matchingProject?.id || deployment.id,
     }).catch(() => {});
 
+    const { getEffectiveGitHubToken } = await import("@/lib/github-app");
+    const effectiveToken = await getEffectiveGitHubToken(user.userId);
+
     // Proxy request to brain /v1/deploy
     const brainRes = await fetch(`${BRAIN_URL}/v1/deploy`, {
       method: "POST",
@@ -109,6 +112,7 @@ export async function POST(req: NextRequest) {
         sourceType,
         repoUrl,
         branch,
+        githubToken: effectiveToken || undefined,
         envVars,
         hostPort: body.hostPort && body.hostPort !== 4567 && body.hostPort !== 4500 ? body.hostPort : undefined,
       }),

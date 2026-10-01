@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
         const { stdout: remoteOut } = await execFileAsync(
           "git",
           ["ls-remote", authUrl, `refs/heads/${pipe.branch || "main"}`],
-          { env: gitEnv, timeout: 5000 }
+          { env: gitEnv, timeout: 5000, windowsHide: true }
         );
 
         const match = remoteOut.trim().match(/^([a-f0-9]{40})/i);

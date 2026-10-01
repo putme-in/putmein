@@ -77,7 +77,6 @@ export default function SecurityPage() {
   const [dataError, setDataError] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanningProject, setScanningProject] = useState<string | null>(null);
-  const [scanError, setScanError] = useState<string | null>(null);
 
   // Scan modal state
   const [showScanModal, setShowScanModal] = useState(false);

@@ -48,6 +48,14 @@ export async function POST(req: NextRequest) {
       where: { userId: user.userId },
     });
 
+    const safeSelect = {
+      id: true,
+      githubUsername: true,
+      avatarUrl: true,
+      createdAt: true,
+      updatedAt: true,
+    };
+
     let integration;
     if (existing) {
       integration = await prisma.rayGithubIntegration.update({
@@ -58,6 +66,7 @@ export async function POST(req: NextRequest) {
           avatarUrl,
           updatedAt: new Date(),
         },
+        select: safeSelect,
       });
     } else {
       integration = await prisma.rayGithubIntegration.create({
@@ -67,6 +76,7 @@ export async function POST(req: NextRequest) {
           accessToken: ghToken || null,
           avatarUrl,
         },
+        select: safeSelect,
       });
     }
 

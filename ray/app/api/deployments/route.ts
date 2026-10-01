@@ -78,12 +78,12 @@ export async function GET(req: NextRequest) {
           // If building was started recently, preserve building status.
           // Never prematurely mark as healthy just because an older container exists!
           const ageMs = Date.now() - new Date(dep.updatedAt || dep.createdAt).getTime();
-          if (ageMs > 15 * 60 * 1000) {
+          if (ageMs > 3 * 60 * 1000) {
             activeDep = await prisma.rayDeployment.update({
               where: { id: dep.id },
               data: {
                 status: "failed",
-                buildLogs: (dep.buildLogs || "") + "\n[Ray] Build timed out after 15 minutes.",
+                buildLogs: (dep.buildLogs || "") + "\n[Ray] Build process stopped responding after 3 minutes. Please ensure Docker daemon is running.",
               },
             });
           }

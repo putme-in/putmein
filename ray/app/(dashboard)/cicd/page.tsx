@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@iconify/react";
+import { validateGithubRepoUrl } from "@/lib/github-url";
 
 interface PipelineItem {
   id: string;
@@ -50,10 +51,12 @@ export default function CicdPage() {
   const [search, setSearch] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [triggeringId, setTriggeringId] = useState<string | null>(null);
+  const [triggerError, setTriggerError] = useState<string | null>(null);
 
   // Form states
   const [name, setName] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
+  const [repoUrlError, setRepoUrlError] = useState<string | null>(null);
   const [branch, setBranch] = useState("main");
   const [port, setPort] = useState(3000);
   const [autoDeploy, setAutoDeploy] = useState(true);
@@ -81,37 +84,59 @@ export default function CicdPage() {
   const handleTriggerRun = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     setTriggeringId(id);
+    setTriggerError(null);
     try {
       const res = await fetch(`/api/cicd/${id}`, { method: "POST" });
-      if (res.ok) {
-        fetchPipelines();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `Trigger failed (${res.status})`);
       }
-    } catch { /* silent */ }
-    finally {
+      fetchPipelines();
+    } catch (err: unknown) {
+      setTriggerError(err instanceof Error ? err.message : "Failed to trigger pipeline run");
+    } finally {
       setTriggeringId(null);
     }
   };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !repoUrl) return;
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setCreateError("Pipeline name is required");
+      return;
+    }
+
+    const validation = validateGithubRepoUrl(repoUrl);
+    if (!validation.valid) {
+      setRepoUrlError(validation.error || "Please enter a valid GitHub repository URL");
+      return;
+    }
+    setRepoUrlError(null);
     setSubmitting(true);
     setCreateError("");
     try {
       const res = await fetch("/api/cicd", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, repoUrl, branch, port, autoDeploy }),
+        body: JSON.stringify({
+          name: trimmedName,
+          repoUrl: validation.normalizedUrl || repoUrl.trim(),
+          branch: branch.trim() || "main",
+          port,
+          autoDeploy,
+        }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed to create pipeline");
       setShowCreateModal(false);
       setName("");
       setRepoUrl("");
+      setRepoUrlError(null);
       fetchPipelines();
       router.push(`/cicd/${data.pipeline.id}`);
     } catch (err: unknown) {
-      setCreateError(err instanceof Error ? err.message : "Failed to create");
+      setCreateError(err instanceof Error ? err.message : "Failed to create pipeline");
     } finally {
       setSubmitting(false);
     }
@@ -179,6 +204,23 @@ export default function CicdPage() {
           <div className="text-xl font-bold text-white tracking-tight text-emerald-400">{stats.successRate}%</div>
         </div>
       </div>
+
+      {triggerError && (
+        <div className="mb-6 p-4 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-300 flex items-center justify-between gap-3 shadow-lg shadow-rose-950/20">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Icon icon="lucide:alert-circle" width={16} height={16} className="shrink-0 text-rose-400" />
+            <span className="font-medium">{triggerError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setTriggerError(null)}
+            className="text-white/40 hover:text-white p-1 rounded-md transition-colors cursor-pointer"
+            title="Dismiss"
+          >
+            <Icon icon="lucide:x" width={14} height={14} />
+          </button>
+        </div>
+      )}
 
       {/* Search Filter & Count */}
       <div className="mb-6 flex items-center gap-3">
@@ -375,17 +417,41 @@ export default function CicdPage() {
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-white/50 uppercase tracking-wider mb-1.5">
-                  GitHub Repository URL
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[11px] font-bold text-white/50 uppercase tracking-wider">
+                    GitHub Repository URL
+                  </label>
+                  <span className="text-[10px] text-white/30 font-mono">https://github.com/owner/repo</span>
+                </div>
                 <input
                   type="text"
                   required
                   placeholder="https://github.com/username/repository"
                   value={repoUrl}
-                  onChange={(e) => setRepoUrl(e.target.value)}
-                  className="w-full bg-[#141414] border border-white/10 focus:border-white/25 focus:outline-none text-xs font-mono text-white placeholder:text-white/30 rounded-lg py-2 px-3 transition-all"
+                  onChange={(e) => {
+                    setRepoUrl(e.target.value);
+                    if (repoUrlError) setRepoUrlError(null);
+                  }}
+                  onBlur={() => {
+                    if (repoUrl.trim()) {
+                      const v = validateGithubRepoUrl(repoUrl);
+                      if (!v.valid) {
+                        setRepoUrlError(v.error || "Invalid GitHub repository URL");
+                      } else {
+                        setRepoUrlError(null);
+                      }
+                    }
+                  }}
+                  className={`w-full bg-[#141414] border ${
+                    repoUrlError ? "border-rose-500/60 focus:border-rose-500" : "border-white/10 focus:border-white/25"
+                  } focus:outline-none text-xs font-mono text-white placeholder:text-white/30 rounded-lg py-2 px-3 transition-all`}
                 />
+                {repoUrlError && (
+                  <p className="text-[11px] text-rose-400 mt-1.5 flex items-center gap-1.5 font-sans">
+                    <Icon icon="lucide:alert-circle" width={13} height={13} className="shrink-0 text-rose-400" />
+                    <span>{repoUrlError}</span>
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -427,7 +493,10 @@ export default function CicdPage() {
               </div>
 
               {createError && (
-                <p className="text-xs text-red-400">{createError}</p>
+                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-300 flex items-center gap-2">
+                  <Icon icon="lucide:alert-circle" width={14} height={14} className="shrink-0 text-rose-400" />
+                  <span>{createError}</span>
+                </div>
               )}
 
               <div className="flex gap-2.5 mt-2">

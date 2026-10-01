@@ -51,6 +51,10 @@ export default function CicdDetailPage({
   const [overrideSubmitting, setOverrideSubmitting] = useState(false);
   const [overrideError, setOverrideError] = useState<string | null>(null);
 
+  const [triggerError, setTriggerError] = useState<string | null>(null);
+  const [triggerSuccess, setTriggerSuccess] = useState<string | null>(null);
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
+
   // Settings form states
   const [editBranch, setEditBranch] = useState("");
   const [editPort, setEditPort] = useState(3000);
@@ -64,6 +68,7 @@ export default function CicdDetailPage({
       if (res.ok) {
         const data = await res.json();
         setPipeline(data.pipeline || null);
+        setPipelineError(null);
         if (data.pipeline) {
           setEditBranch(data.pipeline.branch || "main");
           setEditPort(data.pipeline.port || 3000);
@@ -72,9 +77,15 @@ export default function CicdDetailPage({
           // Auto-expand latest run if none selected
           setExpandedRunId((prev) => prev || data.pipeline.runs?.[0]?.id || null);
         }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setPipelineError(errData.error || `Failed to load pipeline (${res.status})`);
       }
-    } catch { /* silent */ }
-    finally { setLoading(false); }
+    } catch (err: unknown) {
+      setPipelineError(err instanceof Error ? err.message : "Failed to load pipeline");
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
 
   useEffect(() => {
@@ -85,11 +96,20 @@ export default function CicdDetailPage({
 
   const handleTrigger = async () => {
     setTriggering(true);
+    setTriggerError(null);
+    setTriggerSuccess(null);
     try {
-      await fetch(`/api/cicd/${id}`, { method: "POST" });
-      fetchPipeline();
-    } catch { /* silent */ }
-    finally {
+      const res = await fetch(`/api/cicd/${id}`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `Pipeline execution failed to start (${res.status})`);
+      }
+      setTriggerSuccess("Pipeline run successfully initiated");
+      setTimeout(() => setTriggerSuccess(null), 5000);
+      await fetchPipeline();
+    } catch (err: unknown) {
+      setTriggerError(err instanceof Error ? err.message : "Failed to trigger pipeline run");
+    } finally {
       setTriggering(false);
     }
   };
@@ -175,6 +195,27 @@ export default function CicdDetailPage({
     return (
       <div className="flex-1 flex items-center justify-center gap-2 text-white/40 font-sans">
         <SpinIcon /><span className="text-xs font-medium">Loading pipeline details…</span>
+      </div>
+    );
+  }
+
+  if (!pipeline && !loading) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center font-sans">
+        <div className="w-14 h-14 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-400 mb-4">
+          <Icon icon="lucide:alert-circle" width={28} height={28} />
+        </div>
+        <h2 className="text-xl font-bold text-white mb-2">Pipeline Unavailable</h2>
+        <p className="text-xs text-white/60 max-w-md mb-6 leading-relaxed">
+          {pipelineError || "The requested CI/CD pipeline could not be found or you do not have permission to access it."}
+        </p>
+        <button
+          onClick={() => router.push("/cicd")}
+          className="ray-btn-primary px-4 py-2 text-xs flex items-center gap-2 cursor-pointer"
+        >
+          <Icon icon="lucide:arrow-left" width={14} height={14} />
+          <span>Back to CI/CD Pipelines</span>
+        </button>
       </div>
     );
   }
@@ -340,6 +381,41 @@ export default function CicdDetailPage({
           </button>
         </div>
       </div>
+
+      {/* Trigger Execution Alerts */}
+      {triggerError && (
+        <div className="mb-6 p-4 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-300 flex items-center justify-between gap-3 shadow-lg shadow-rose-950/20">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Icon icon="lucide:alert-circle" width={16} height={16} className="shrink-0 text-rose-400" />
+            <span className="font-medium">{triggerError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setTriggerError(null)}
+            className="text-white/40 hover:text-white p-1 rounded-md transition-colors cursor-pointer"
+            title="Dismiss"
+          >
+            <Icon icon="lucide:x" width={14} height={14} />
+          </button>
+        </div>
+      )}
+
+      {triggerSuccess && (
+        <div className="mb-6 p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-xs text-emerald-300 flex items-center justify-between gap-3 shadow-lg shadow-emerald-950/20">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Icon icon="lucide:check-circle-2" width={16} height={16} className="shrink-0 text-emerald-400" />
+            <span className="font-medium">{triggerSuccess}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setTriggerSuccess(null)}
+            className="text-white/40 hover:text-white p-1 rounded-md transition-colors cursor-pointer"
+            title="Dismiss"
+          >
+            <Icon icon="lucide:x" width={14} height={14} />
+          </button>
+        </div>
+      )}
 
       {/* Dual Consent Deployment Override Card (Shown when pipeline is blocked by danger findings) */}
       {isBlockedDanger && (

@@ -237,6 +237,27 @@ export default function ProjectDetailPage({
     finally { setLoading(false); }
   }, [id]);
 
+  const [cancellingDeploy, setCancellingDeploy] = useState(false);
+
+  const handleCancelDeploy = async () => {
+    if (!project?.deployment) return;
+    setCancellingDeploy(true);
+    try {
+      const res = await fetch(`/api/deploy/${project.deployment.id}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cancel" }),
+      });
+      if (res.ok) {
+        window.dispatchEvent(new Event("ray:redeploy-triggered"));
+        fetchProjectDetails();
+      }
+    } catch { /* silent */ }
+    finally {
+      setCancellingDeploy(false);
+    }
+  };
+
   const handleDeployOrRedeploy = async () => {
     setDeploying(true);
     try {
@@ -1906,6 +1927,23 @@ export default function ProjectDetailPage({
                           >
                             <span>⚡</span>
                             <span>Ray AI Troubleshooter</span>
+                          </button>
+                        )}
+                        {project.deployment.status === "building" && (
+                          <button
+                            onClick={handleCancelDeploy}
+                            disabled={cancellingDeploy}
+                            className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
+                            title="Cancel stuck deployment"
+                          >
+                            {cancellingDeploy ? (
+                              <SpinIcon size={12} />
+                            ) : (
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                                <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+                              </svg>
+                            )}
+                            <span>{cancellingDeploy ? "Cancelling…" : "Cancel Build"}</span>
                           </button>
                         )}
                         <button

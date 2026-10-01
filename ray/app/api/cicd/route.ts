@@ -4,6 +4,8 @@ import { verifyToken } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { detectProjectStack, detectContainerStack } from "@/lib/project-detector";
 import { ensureGitPipeline, detectGitRemoteUrl } from "@/lib/cicd-sync";
+import { validateGithubRepoUrl } from "@/lib/github-url";
+import { isValidGitBranch } from "@/lib/github-webhook";
 
 // Helper to strip internal access tokens from repo URLs for clean presentation
 function sanitizeRepoUrl(url: string | null | undefined): string {
@@ -137,8 +139,19 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { name, repoUrl, branch = "main", autoDeploy = true, port = 3000, dockerfilePath = "Dockerfile" } = body;
 
-    if (!name || !repoUrl) {
-      return NextResponse.json({ error: "Pipeline name and repository URL are required" }, { status: 400 });
+    const trimmedName = typeof name === "string" ? name.trim() : "";
+    if (!trimmedName) {
+      return NextResponse.json({ error: "Pipeline name is required" }, { status: 400 });
+    }
+
+    const repoValidation = validateGithubRepoUrl(repoUrl);
+    if (!repoValidation.valid) {
+      return NextResponse.json({ error: repoValidation.error || "Invalid GitHub repository URL" }, { status: 400 });
+    }
+
+    const trimmedBranch = typeof branch === "string" ? branch.trim() : "main";
+    if (trimmedBranch && !isValidGitBranch(trimmedBranch)) {
+      return NextResponse.json({ error: "Invalid target Git branch name" }, { status: 400 });
     }
 
     let allocatedPort = Number(port);
@@ -151,12 +164,12 @@ export async function POST(req: NextRequest) {
     const pipeline = await prisma.rayPipeline.create({
       data: {
         userId: user.userId,
-        name: name.trim(),
-        repoUrl: repoUrl.trim(),
-        branch: branch.trim(),
+        name: trimmedName,
+        repoUrl: repoValidation.normalizedUrl || String(repoUrl).trim(),
+        branch: trimmedBranch || "main",
         autoDeploy: !!autoDeploy,
         port: allocatedPort,
-        dockerfilePath: dockerfilePath.trim() || "Dockerfile",
+        dockerfilePath: typeof dockerfilePath === "string" ? dockerfilePath.trim() || "Dockerfile" : "Dockerfile",
         status: "idle",
       },
     });

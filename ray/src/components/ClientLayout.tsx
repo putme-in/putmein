@@ -132,6 +132,7 @@ function LiveDeploymentWidget({
   const [copied, setCopied] = useState(false);
   const [showTroubleshooter, setShowTroubleshooter] = useState(false);
   const [redeploying, setRedeploying] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
 
   const isBuilding = deployment.status === "building" || deployment.status === "deploying" || deployment.status === "pending";
@@ -148,6 +149,26 @@ function LiveDeploymentWidget({
     navigator.clipboard.writeText(deployment.buildLogs || "No logs");
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleTriggerCancel = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (cancelling) return;
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/deploy/${deployment.id}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cancel" }),
+      });
+      if (res.ok) {
+        onRedeploy();
+        window.dispatchEvent(new Event("ray:deployment-cancelled"));
+      }
+    } catch { /* silent */ }
+    finally {
+      setCancelling(false);
+    }
   };
 
   const handleTriggerRedeploy = async () => {
@@ -242,6 +263,24 @@ function LiveDeploymentWidget({
                       <line x1="10" y1="14" x2="21" y2="3" />
                     </svg>
                   </a>
+                )}
+
+                {isBuilding && (
+                  <button
+                    onClick={handleTriggerCancel}
+                    disabled={cancelling}
+                    className="text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-red-500/15 text-red-300 hover:bg-red-500/25 border border-red-500/30 transition-all cursor-pointer active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
+                    title="Cancel deployment"
+                  >
+                    {cancelling ? (
+                      <svg className="animate-spin w-3 h-3 text-red-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                    ) : (
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                      </svg>
+                    )}
+                    <span>{cancelling ? "Cancelling…" : "Cancel"}</span>
+                  </button>
                 )}
 
                 <button
@@ -647,11 +686,13 @@ export default function ClientLayout({ children, user }: ClientLayoutProps) {
     window.addEventListener("ray:tool-deploy-output", handleDeployOutput);
     window.addEventListener("ray:tool-deploy-end", handleDeployEnd);
     window.addEventListener("ray:redeploy-triggered", checkActiveDeployments);
+    window.addEventListener("ray:deployment-cancelled", checkActiveDeployments);
     return () => {
       window.removeEventListener("ray:tool-deploy-start", handleDeployStart);
       window.removeEventListener("ray:tool-deploy-output", handleDeployOutput);
       window.removeEventListener("ray:tool-deploy-end", handleDeployEnd);
       window.removeEventListener("ray:redeploy-triggered", checkActiveDeployments);
+      window.removeEventListener("ray:deployment-cancelled", checkActiveDeployments);
     };
   }, [checkActiveDeployments]);
 

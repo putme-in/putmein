@@ -154,6 +154,9 @@ export async function POST(
           try { envs = JSON.parse(deployment.envVars); } catch { /* ignore */ }
         }
 
+        const { getEffectiveGitHubToken } = await import("@/lib/github-app");
+        const effectiveToken = await getEffectiveGitHubToken(user.userId);
+
         const bRes = await fetch(`${BRAIN_URL}/v1/deploy`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
@@ -165,6 +168,7 @@ export async function POST(
             sourceType: deployment.sourceType,
             repoUrl: deployment.repoUrl,
             branch: deployment.branch,
+            githubToken: effectiveToken || undefined,
             envVars: envs,
             hostPort: deployment.hostPort && deployment.hostPort !== 4567 && deployment.hostPort !== 4500 ? deployment.hostPort : undefined,
           }),
@@ -289,15 +293,73 @@ export async function POST(
     return NextResponse.json({ status: "building", message: "Redeployment started" });
   }
 
+  if (action === "cancel") {
+    if (deployment.containerName) {
+      try {
+        await fetch(`${BRAIN_URL}/v1/deploy/action`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
+          body: JSON.stringify({ action: "stop", container: deployment.containerName }),
+        });
+      } catch { /* silent */ }
+    }
+
+    const cancellationLog = (deployment.buildLogs || "") + "\n[CANCELLED] Deployment was cancelled by user.\n";
+    await prisma.rayDeployment.update({
+      where: { id: targetDepId },
+      data: {
+        status: "failed",
+        buildLogs: cancellationLog,
+        updatedAt: new Date(),
+      },
+    });
+
+    // Update any linked active pipeline run to failed
+    if (linkedPipelineRunId) {
+      await prisma.rayPipelineRun.update({
+        where: { id: linkedPipelineRunId },
+        data: { status: "failed", logs: cancellationLog },
+      }).catch(() => {});
+    } else {
+      const activeRun = await prisma.rayPipelineRun.findFirst({
+        where: {
+          pipeline: { userId: user.userId, name: deployment.name },
+          status: "running",
+        },
+      });
+      if (activeRun) {
+        await prisma.rayPipelineRun.update({
+          where: { id: activeRun.id },
+          data: { status: "failed", logs: cancellationLog },
+        }).catch(() => {});
+      }
+    }
+
+    if (linkedPipelineId) {
+      await prisma.rayPipeline.update({
+        where: { id: linkedPipelineId },
+        data: { status: "failed", lastRunAt: new Date() },
+      }).catch(() => {});
+    }
+
+    return NextResponse.json({ status: "cancelled", message: "Deployment cancelled successfully" });
+  }
+
   if (action === "restart" || action === "stop") {
     if (deployment.containerName) {
-      const res = await fetch(`${BRAIN_URL}/v1/deploy/action`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
-        body: JSON.stringify({ action, container: deployment.containerName }),
-      });
-      if (!res.ok) {
-        return NextResponse.json({ error: "Action failed in container engine" }, { status: 500 });
+      try {
+        const res = await fetch(`${BRAIN_URL}/v1/deploy/action`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
+          body: JSON.stringify({ action, container: deployment.containerName }),
+        });
+        if (!res.ok && action === "restart") {
+          return NextResponse.json({ error: "Action failed in container engine" }, { status: 500 });
+        }
+      } catch (containerErr) {
+        if (action === "restart") {
+          return NextResponse.json({ error: "Container engine unreachable" }, { status: 500 });
+        }
       }
     }
     const newStatus = action === "restart" ? "healthy" : "stopped";

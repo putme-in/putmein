@@ -29,6 +29,7 @@ export async function detectGitRemoteUrl(projectPath: string): Promise<string | 
   try {
     const { stdout } = await execFileAsync("git", ["-C", projectPath, "remote", "get-url", "origin"], {
       timeout: 3000,
+      windowsHide: true,
     });
     const url = stdout.trim();
     if (url) return url;

@@ -76,6 +76,7 @@ export default function DeploymentsPage() {
   const [selectedLogsDep, setSelectedLogsDep] = useState<DeploymentItem | null>(null);
   const [troubleshootDep, setTroubleshootDep] = useState<DeploymentItem | null>(null);
   const [redeployingId, setRedeployingId] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [portRegistry, setPortRegistry] = useState<PortRegistryState | null>(null);
   const [showAllPorts, setShowAllPorts] = useState(false);
@@ -113,6 +114,24 @@ export default function DeploymentsPage() {
     } catch { /* silent */ }
     finally {
       setRedeployingId(null);
+    }
+  };
+
+  const handleCancelDeploy = async (dep: DeploymentItem) => {
+    setCancellingId(dep.id);
+    try {
+      const res = await fetch(`/api/deploy/${dep.id}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cancel" }),
+      });
+      if (res.ok) {
+        window.dispatchEvent(new Event("ray:redeploy-triggered"));
+        fetchDeployments();
+      }
+    } catch { /* silent */ }
+    finally {
+      setCancellingId(null);
     }
   };
 
@@ -373,21 +392,39 @@ export default function DeploymentsPage() {
                     </button>
                   )}
 
-                  <button
-                    onClick={() => handleRedeploy(dep)}
-                    disabled={redeployingId === dep.id || dep.status === "building" || dep.status === "deploying"}
-                    className="ray-btn-ghost flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer disabled:opacity-40"
-                    title="Trigger a clean rebuild and container launch"
-                  >
-                    {redeployingId === dep.id ? (
-                      <SpinIcon size={12} />
-                    ) : (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-                      </svg>
-                    )}
-                    <span>{redeployingId === dep.id ? "Deploying…" : "Redeploy"}</span>
-                  </button>
+                  {dep.status === "building" || dep.status === "deploying" ? (
+                    <button
+                      onClick={() => handleCancelDeploy(dep)}
+                      disabled={cancellingId === dep.id}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
+                      title="Cancel stuck deployment"
+                    >
+                      {cancellingId === dep.id ? (
+                        <SpinIcon size={12} />
+                      ) : (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                          <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+                        </svg>
+                      )}
+                      <span>{cancellingId === dep.id ? "Cancelling…" : "Cancel Build"}</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleRedeploy(dep)}
+                      disabled={redeployingId === dep.id}
+                      className="ray-btn-ghost flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer disabled:opacity-40"
+                      title="Trigger a clean rebuild and container launch"
+                    >
+                      {redeployingId === dep.id ? (
+                        <SpinIcon size={12} />
+                      ) : (
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                        </svg>
+                      )}
+                      <span>{redeployingId === dep.id ? "Deploying…" : "Redeploy"}</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => setSelectedLogsDep(dep)}
@@ -442,6 +479,19 @@ export default function DeploymentsPage() {
               </div>
 
               <div className="flex items-center gap-2">
+                {(selectedLogsDep.status === "building" || selectedLogsDep.status === "deploying") && (
+                  <button
+                    onClick={() => {
+                      const dep = selectedLogsDep;
+                      setSelectedLogsDep(null);
+                      handleCancelDeploy(dep);
+                    }}
+                    className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/30 transition-all flex items-center gap-1 cursor-pointer shadow-sm active:scale-95"
+                    title="Cancel stuck deployment"
+                  >
+                    <span>Cancel Build</span>
+                  </button>
+                )}
                 <span
                   className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
                     selectedLogsDep.status === "healthy"

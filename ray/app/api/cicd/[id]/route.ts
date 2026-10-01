@@ -6,6 +6,45 @@ import { detectProjectStack, detectContainerStack } from "@/lib/project-detector
 
 const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
+// Helper to locate pipeline with admin override and single-user local fallback
+async function findAuthorizedPipeline(
+  id: string,
+  user: { userId: string; role?: string },
+  includeRuns = false
+) {
+  const isAdmin = user.role === "ADMIN" || user.role === "admin";
+  const includeClause = includeRuns
+    ? {
+        runs: {
+          orderBy: { createdAt: "desc" as const },
+        },
+      }
+    : undefined;
+
+  let pipeline = await prisma.rayPipeline.findFirst({
+    where: isAdmin ? { id } : { id, userId: user.userId },
+    ...(includeClause && { include: includeClause }),
+  });
+
+  if (!pipeline) {
+    const existing = await prisma.rayPipeline.findUnique({
+      where: { id },
+      ...(includeClause && { include: includeClause }),
+    });
+
+    if (existing) {
+      const userCount = await prisma.user.count();
+      if (isAdmin || userCount <= 1 || existing.userId === user.userId) {
+        pipeline = existing;
+      } else {
+        return { pipeline: null, forbidden: true };
+      }
+    }
+  }
+
+  return { pipeline, forbidden: false };
+}
+
 // GET /api/cicd/[id] — get pipeline with all runs & stack metadata
 export async function GET(
   req: NextRequest,
@@ -18,16 +57,18 @@ export async function GET(
     const user = await verifyToken(token);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { id } = await params;
-    const pipeline = await prisma.rayPipeline.findFirst({
-      where: { id, userId: user.userId },
-      include: {
-        runs: {
-          orderBy: { createdAt: "desc" },
-        },
-      },
-    });
-    if (!pipeline) return NextResponse.json({ error: "Pipeline not found" }, { status: 404 });
+    const resolvedParams = await params;
+    const rawId = resolvedParams?.id;
+    const id = rawId ? decodeURIComponent(rawId).trim() : "";
+    if (!id) return NextResponse.json({ error: "Pipeline ID is required" }, { status: 400 });
+
+    const { pipeline, forbidden } = await findAuthorizedPipeline(id, user, true);
+    if (forbidden) {
+      return NextResponse.json({ error: "Forbidden: You do not have permission to view this pipeline" }, { status: 403 });
+    }
+    if (!pipeline) {
+      return NextResponse.json({ error: `Pipeline not found: ${id}` }, { status: 404 });
+    }
 
     const linkedProj = pipeline.projectId
       ? await prisma.rayMonitorProject.findFirst({ where: { id: pipeline.projectId, userId: user.userId } })
@@ -93,11 +134,23 @@ export async function PATCH(
     const user = await verifyToken(token);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { id } = await params;
+    const resolvedParams = await params;
+    const rawId = resolvedParams?.id;
+    const id = rawId ? decodeURIComponent(rawId).trim() : "";
+    if (!id) return NextResponse.json({ error: "Pipeline ID is required" }, { status: 400 });
+
+    const { pipeline, forbidden } = await findAuthorizedPipeline(id, user, false);
+    if (forbidden) {
+      return NextResponse.json({ error: "Forbidden: You do not have permission to modify this pipeline" }, { status: 403 });
+    }
+    if (!pipeline) {
+      return NextResponse.json({ error: `Pipeline not found: ${id}` }, { status: 404 });
+    }
+
     const body = await req.json();
 
     const updated = await prisma.rayPipeline.update({
-      where: { id, userId: user.userId },
+      where: { id },
       data: {
         ...(body.branch !== undefined && { branch: String(body.branch).trim() }),
         ...(body.port !== undefined && { port: Number(body.port) || 3000 }),
@@ -125,11 +178,18 @@ export async function POST(
     const user = await verifyToken(token);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const { id } = await params;
-    const pipeline = await prisma.rayPipeline.findFirst({
-      where: { id, userId: user.userId },
-    });
-    if (!pipeline) return NextResponse.json({ error: "Pipeline not found" }, { status: 404 });
+    const resolvedParams = await params;
+    const rawId = resolvedParams?.id;
+    const id = rawId ? decodeURIComponent(rawId).trim() : "";
+    if (!id) return NextResponse.json({ error: "Pipeline ID is required" }, { status: 400 });
+
+    const { pipeline, forbidden } = await findAuthorizedPipeline(id, user, false);
+    if (forbidden) {
+      return NextResponse.json({ error: "Forbidden: You do not have permission to run this pipeline" }, { status: 403 });
+    }
+    if (!pipeline) {
+      return NextResponse.json({ error: `Pipeline not found: ${id}` }, { status: 404 });
+    }
 
     // Create a new PipelineRun record
     const run = await prisma.rayPipelineRun.create({
@@ -162,7 +222,7 @@ export async function POST(
     executePipelineRun({
       pipelineId: id,
       runId: run.id,
-      userId: user.userId,
+      userId: pipeline.userId || user.userId,
       overrideAuthor: user.name || undefined,
     }).catch((err) => {
       console.error("executePipelineRun error:", err);

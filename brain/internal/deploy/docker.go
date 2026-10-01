@@ -55,6 +55,7 @@ type DeployRequest struct {
 	SourceType  string            `json:"sourceType"` // "upload" | "github" | "local"
 	RepoURL     string            `json:"repoUrl,omitempty"`
 	Branch      string            `json:"branch,omitempty"`
+	GitHubToken string            `json:"githubToken,omitempty"`
 	EnvVars     map[string]string `json:"envVars,omitempty"`
 	HostPort    int               `json:"hostPort,omitempty"`
 }
@@ -448,6 +449,86 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 		}
 	}
 	req.ProjectPath = resolvedPath
+
+	// ── STEP 0: Automatic Git Clone / Pull (if repository configured) ──
+	if req.RepoURL != "" || req.SourceType == "github" {
+		branch := strings.TrimSpace(req.Branch)
+		if branch == "" {
+			branch = "main"
+		}
+
+		cloneURL := strings.TrimSpace(req.RepoURL)
+		if cloneURL != "" {
+			if req.GitHubToken != "" && strings.Contains(cloneURL, "github.com/") && !strings.Contains(cloneURL, "@") {
+				cloneURL = strings.Replace(cloneURL, "https://github.com/", fmt.Sprintf("https://x-access-token:%s@github.com/", req.GitHubToken), 1)
+			}
+
+			gitDir := filepath.Join(req.ProjectPath, ".git")
+			if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+				// Local directory does not exist or is not a git repo: perform fresh clone
+				emit(DeployStepEvent{
+					Step:    StepSourceCheck,
+					Status:  "running",
+					Message: fmt.Sprintf("Cloning repository %s (branch: %s)...", req.Name, branch),
+				})
+
+				_ = os.MkdirAll(filepath.Dir(req.ProjectPath), 0755)
+				if _, err := os.Stat(req.ProjectPath); err == nil {
+					// Clean up empty/stale non-git directory
+					_ = os.RemoveAll(req.ProjectPath)
+				}
+
+				cloneCmd := exec.CommandContext(ctx, "git", "clone", "-b", branch, "--single-branch", cloneURL, req.ProjectPath)
+				cloneCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=")
+				var cloneOut bytes.Buffer
+				cloneCmd.Stdout = &cloneOut
+				cloneCmd.Stderr = &cloneOut
+
+				if err := cloneCmd.Run(); err != nil {
+					// Fallback: try clone default branch without -b if specified branch failed
+					fallbackCmd := exec.CommandContext(ctx, "git", "clone", cloneURL, req.ProjectPath)
+					fallbackCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=")
+					var fallbackOut bytes.Buffer
+					fallbackCmd.Stdout = &fallbackOut
+					fallbackCmd.Stderr = &fallbackOut
+					if errFallback := fallbackCmd.Run(); errFallback != nil {
+						emit(DeployStepEvent{
+							Step:     StepSourceCheck,
+							Status:   "error",
+							Message:  fmt.Sprintf("Failed to clone repository: %v", err),
+							LogDelta: cloneOut.String() + "\n" + fallbackOut.String(),
+						})
+						return nil, fmt.Errorf("failed to clone repository %s: %v", req.RepoURL, err)
+					}
+				}
+
+				emit(DeployStepEvent{
+					Step:    StepSourceCheck,
+					Status:  "running",
+					Message: fmt.Sprintf("Repository cloned successfully into %s", req.ProjectPath),
+				})
+			} else {
+				// Local repo exists: fetch & sync branch
+				emit(DeployStepEvent{
+					Step:    StepSourceCheck,
+					Status:  "running",
+					Message: fmt.Sprintf("Syncing latest commits for %s (branch: %s)...", req.Name, branch),
+				})
+
+				fetchCmd := exec.CommandContext(ctx, "git", "-C", req.ProjectPath, "fetch", cloneURL, branch)
+				fetchCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=")
+				if _, err := fetchCmd.CombinedOutput(); err == nil {
+					checkoutCmd := exec.CommandContext(ctx, "git", "-C", req.ProjectPath, "checkout", branch)
+					checkoutCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=")
+					_ = checkoutCmd.Run()
+
+					resetCmd := exec.CommandContext(ctx, "git", "-C", req.ProjectPath, "reset", "--hard", "FETCH_HEAD")
+					resetCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=")
+					_ = resetCmd.Run()
+				}
+			}
+		}
+	}
 
 	// ── STEP 1: Source Validation ──
 	emit(DeployStepEvent{

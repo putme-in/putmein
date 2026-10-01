@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { verifyGithubWebhookSignature } from "@/lib/github-webhook";
+import { verifyGithubWebhookSignature, isValidGitBranch } from "@/lib/github-webhook";
 import path from "path";
 import fs from "fs";
-import { execSync } from "child_process";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import { getDeploymentsDir } from "@/lib/settings";
+
+const execFileAsync = promisify(execFile);
 
 export const runtime = "nodejs";
 
@@ -15,11 +18,21 @@ export async function POST(req: NextRequest) {
     const rawBody = await req.text();
     const signature = req.headers.get("x-hub-signature-256");
     const event = req.headers.get("x-github-event");
+
+    if (!signature) {
+      return NextResponse.json({ error: "Missing webhook signature" }, { status: 401 });
+    }
+
     const allIntegrations = await prisma.rayGithubIntegration.findMany({
       select: { webhookSecret: true },
     });
-    if (!allIntegrations.some(({ webhookSecret }) =>
-      verifyGithubWebhookSignature(rawBody, signature, webhookSecret)
+    const candidateSecrets = [
+      process.env.GITHUB_WEBHOOK_SECRET,
+      ...allIntegrations.map((i) => i.webhookSecret),
+    ].filter(Boolean) as string[];
+
+    if (candidateSecrets.length === 0 || !candidateSecrets.some((secret) =>
+      verifyGithubWebhookSignature(rawBody, signature, secret)
     )) {
       return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
     }
@@ -38,12 +51,17 @@ export async function POST(req: NextRequest) {
 
     const repoFullName = payload.repository?.full_name;
     const cloneUrl = payload.repository?.clone_url;
-    const branch = payload.ref?.replace("refs/heads/", "");
+    const rawBranch = payload.ref ? payload.ref.replace(/^refs\/heads\//, "") : undefined;
     const headCommit = payload.head_commit;
 
     if (!repoFullName || !cloneUrl) {
       return NextResponse.json({ error: "No repository in payload" }, { status: 400 });
     }
+
+    if (rawBranch && !isValidGitBranch(rawBranch)) {
+      return NextResponse.json({ error: "Invalid branch reference in webhook payload" }, { status: 400 });
+    }
+    const branch = rawBranch;
 
     // 1. Find matching pipelines and deployments for this repository
     const shortRepoName = repoFullName.split("/").pop() || repoFullName;
@@ -79,8 +97,13 @@ export async function POST(req: NextRequest) {
       where: { userId: { in: userIds } },
       select: { webhookSecret: true },
     });
-    const signatureValid = integrations.some(({ webhookSecret }) =>
-      verifyGithubWebhookSignature(rawBody, signature, webhookSecret)
+    const repoCandidateSecrets = [
+      process.env.GITHUB_WEBHOOK_SECRET,
+      ...integrations.map((i) => i.webhookSecret),
+    ].filter(Boolean) as string[];
+
+    const signatureValid = repoCandidateSecrets.length > 0 && repoCandidateSecrets.some((secret) =>
+      verifyGithubWebhookSignature(rawBody, signature, secret)
     );
 
     if (!signatureValid) {
@@ -150,15 +173,17 @@ export async function POST(req: NextRequest) {
         authUrl = cloneUrl.replace("https://", `https://x-access-token:${effectiveToken}@`);
       }
 
+      const safeBranch = (branch && isValidGitBranch(branch) ? branch : dep.branch) || "main";
+
       try {
         if (!fs.existsSync(targetDir)) {
-          execSync(`git clone -b ${branch || dep.branch || "main"} --single-branch "${authUrl}" "${targetDir}"`, { env: gitEnv });
+          await execFileAsync("git", ["clone", "-b", safeBranch, "--single-branch", authUrl, targetDir], { env: gitEnv, windowsHide: true });
         } else {
-          execSync(`git -C "${targetDir}" remote set-url origin "${cloneUrl}"`, { env: gitEnv });
-          execSync(`git -C "${targetDir}" fetch "${authUrl}" "${branch || dep.branch || "main"}"`, { env: gitEnv });
-          execSync(`git -C "${targetDir}" checkout "${branch || dep.branch || "main"}"`, { env: gitEnv });
-          execSync(`git -C "${targetDir}" reset --hard FETCH_HEAD`, { env: gitEnv });
-          execSync(`git -C "${targetDir}" clean -fd`, { env: gitEnv });
+          await execFileAsync("git", ["-C", targetDir, "remote", "set-url", "origin", cloneUrl], { env: gitEnv, windowsHide: true }).catch(() => {});
+          await execFileAsync("git", ["-C", targetDir, "fetch", authUrl, safeBranch], { env: gitEnv, windowsHide: true });
+          await execFileAsync("git", ["-C", targetDir, "checkout", safeBranch], { env: gitEnv, windowsHide: true });
+          await execFileAsync("git", ["-C", targetDir, "reset", "--hard", "FETCH_HEAD"], { env: gitEnv, windowsHide: true });
+          await execFileAsync("git", ["-C", targetDir, "clean", "-fd"], { env: gitEnv, windowsHide: true });
         }
       } catch (gitErr) {
         console.error(`Git sync error for deployment ${dep.name}:`, gitErr);
@@ -185,7 +210,7 @@ export async function POST(req: NextRequest) {
           projectPath: targetDir,
           sourceType: "github",
           repoUrl: cloneUrl,
-          branch: branch || dep.branch || "main",
+          branch: safeBranch,
         }),
       }).catch((e) => console.error("Auto-deploy error:", e));
 
