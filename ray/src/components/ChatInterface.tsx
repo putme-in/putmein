@@ -1251,6 +1251,7 @@ export default function ChatInterface({
   const [autoRetryAttempt, setAutoRetryAttempt] = useState<number>(0);
   const autoRetryAttemptRef = useRef<number>(0);
   const autoRetryTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastUserPromptRef = useRef<string>("");
 
   // Auto-scroll slash command popover when navigating with arrow keys
   useEffect(() => {
@@ -2677,6 +2678,7 @@ CRITICAL INSTRUCTIONS FOR AI:
       deployMode: activeDeployMode || undefined,
       timestamp: new Date(),
     };
+    lastUserPromptRef.current = cleanText || userMsg.content;
     setSelectedContext(null);
     setDeployMode(null);
     setExecutionMode(null);
@@ -3069,7 +3071,19 @@ CRITICAL INSTRUCTIONS FOR AI:
       }
     } catch (err: unknown) {
       const isAbort = err instanceof Error && err.name === "AbortError";
-      const rawErrMsg = err instanceof Error ? err.message : "network error";
+      let rawErrMsg = err instanceof Error ? err.message : "network error";
+
+      // Translate technical connection / fetch errors into a clear, actionable user message
+      if (
+        !isAbort &&
+        (rawErrMsg.includes("fetch failed") ||
+          rawErrMsg.includes("Failed to fetch") ||
+          rawErrMsg.includes("ECONNREFUSED") ||
+          rawErrMsg.toLowerCase() === "network error")
+      ) {
+        rawErrMsg = "Unable to reach the PutMeIn AI service. Please check your network connection and verify that the background AI service is running.";
+      }
+
       const isNetworkErr =
         !isAbort &&
         !isApiKeyError(rawErrMsg) &&
@@ -3078,6 +3092,7 @@ CRITICAL INSTRUCTIONS FOR AI:
           rawErrMsg.includes("fetch") ||
           rawErrMsg.includes("terminated") ||
           rawErrMsg.includes("connection") ||
+          rawErrMsg.includes("AI service") ||
           rawErrMsg.includes("500") ||
           rawErrMsg.includes("502") ||
           rawErrMsg.includes("504") ||
@@ -3096,7 +3111,9 @@ CRITICAL INSTRUCTIONS FOR AI:
         )
       );
 
-      if (isNetworkErr && autoRetryAttemptRef.current < 5) {
+      // Controlled retry limit: at most 1 automatic retry attempt for transient network disconnects.
+      // Automatically stops after 1 attempt, giving user clear manual Retry and Cancel buttons.
+      if (isNetworkErr && autoRetryAttemptRef.current < 1) {
         const nextAttempt = autoRetryAttemptRef.current + 1;
         autoRetryAttemptRef.current = nextAttempt;
         setAutoRetryAttempt(nextAttempt);
@@ -3112,18 +3129,25 @@ CRITICAL INSTRUCTIONS FOR AI:
             if (autoRetryTimerRef.current) clearInterval(autoRetryTimerRef.current);
             autoRetryTimerRef.current = null;
             setAutoRetryCountdown(null);
-            // Trigger automatic retry seamlessly
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.errorMessage ? { ...m, errorMessage: undefined, isRetryable: false } : m
-              )
-            );
-            sendTextRef.current?.("Please continue where you left off and finish the task.");
+
+            // Retry the user's actual prompt rather than a generic phantom message
+            const promptToRetry =
+              lastUserPromptRef.current ||
+              [...messages].reverse().find((m) => m.role === "user")?.content ||
+              "";
+
+            if (promptToRetry) {
+              setMessages((prev) =>
+                prev.filter((m) => m.id !== currentMsgIdRef.current)
+              );
+              sendTextRef.current?.(promptToRetry);
+            }
           }
         }, 1000);
-      } else if (!isNetworkErr) {
-        autoRetryAttemptRef.current = 0;
-        setAutoRetryAttempt(0);
+      } else {
+        // Stop automatically retrying; keep error displayed and ready for manual retry or cancel
+        if (autoRetryTimerRef.current) clearInterval(autoRetryTimerRef.current);
+        autoRetryTimerRef.current = null;
         setAutoRetryCountdown(null);
       }
     } finally {
@@ -3131,7 +3155,6 @@ CRITICAL INSTRUCTIONS FOR AI:
       abortRef.current = null;
       setTimeout(() => inputRef.current?.focus(), 80);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, modelId, isLoading, ensureSession, saveMessages, mentionedProjects, monitorProjects, selectedContext, deployMode, executionMode, defaultExecutionMode, deploymentsDir]);
 
   // Keep the ref current so the stable terminal listener can call the latest sendText
@@ -3158,13 +3181,29 @@ CRITICAL INSTRUCTIONS FOR AI:
       autoRetryTimerRef.current = null;
     }
     setAutoRetryCountdown(null);
-    setMessages((prev) =>
-      prev.map((m) =>
+    autoRetryAttemptRef.current = 0;
+    setAutoRetryAttempt(0);
+
+    const promptToRetry =
+      lastUserPromptRef.current ||
+      [...messages].reverse().find((m) => m.role === "user")?.content ||
+      "";
+
+    if (!promptToRetry) return;
+
+    // Remove the failed assistant message so the retry starts cleanly
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && last.role === "assistant" && (last.errorMessage || isErrorContent(last.content))) {
+        return prev.slice(0, -1);
+      }
+      return prev.map((m) =>
         m.errorMessage ? { ...m, errorMessage: undefined, isRetryable: false } : m
-      )
-    );
-    sendText("Please continue where you left off and finish the task.");
-  }, [isLoading, sendText]);
+      );
+    });
+
+    sendText(promptToRetry);
+  }, [isLoading, messages, sendText]);
 
   const sendMessage = async () => {
     if ((!input.trim() && !attachedProject && !selectedContext && !deployMode && !executionMode) || isLoading || isUploading) return;
@@ -3730,15 +3769,13 @@ CRITICAL INSTRUCTIONS FOR AI:
                                 <div className="min-w-0 flex-1">
                                   <div className={`font-semibold ${autoRetryCountdown !== null && autoRetryCountdown > 0 || isApiKeyError(msg.errorMessage || msg.content) ? "text-amber-200" : "text-red-200"} text-xs mb-0.5`}>
                                     {autoRetryCountdown !== null && autoRetryCountdown > 0
-                                      ? `Network Disconnected (Auto-retrying in ${autoRetryCountdown}s)`
+                                      ? `Connection Issue (Auto-retrying in ${autoRetryCountdown}s)`
                                       : isApiKeyError(msg.errorMessage || msg.content)
                                         ? "API Key Not Configured"
-                                        : "Request Error"}
+                                        : "Request Failed"}
                                   </div>
                                   <p className="text-white/80 leading-relaxed text-xs font-mono break-words whitespace-pre-wrap">
-                                    {autoRetryCountdown !== null && autoRetryCountdown > 0
-                                      ? `Attempt ${autoRetryAttempt}/5 — Resuming AI generation automatically...`
-                                      : (msg.errorMessage || msg.content).replace(/^Error:\s*|^API Key Error:\s*/i, "")}
+                                    {(msg.errorMessage || msg.content).replace(/^Error:\s*|^API Key Error:\s*/i, "")}
                                   </p>
                                 </div>
                               </div>
@@ -3768,17 +3805,26 @@ CRITICAL INSTRUCTIONS FOR AI:
                                   <span>Add API Key →</span>
                                 </Link>
                               ) : (
-                                <button
-                                  type="button"
-                                  onClick={handleRetry}
-                                  disabled={isLoading}
-                                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white text-black hover:bg-white/90 text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer flex-shrink-0"
-                                >
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
-                                  </svg>
-                                  <span>Try again</span>
-                                </button>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={handleRetry}
+                                    disabled={isLoading}
+                                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white text-black hover:bg-white/90 text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer"
+                                  >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+                                    </svg>
+                                    <span>Try again</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleStop}
+                                    className="inline-flex items-center px-2.5 py-1.5 rounded-lg bg-transparent hover:bg-white/5 text-white/50 hover:text-white/80 text-xs font-medium transition-all cursor-pointer"
+                                  >
+                                    <span>Cancel</span>
+                                  </button>
+                                </div>
                               )}
                             </div>
                           )}

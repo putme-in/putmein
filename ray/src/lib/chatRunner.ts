@@ -211,24 +211,61 @@ class ChatRunnerManager {
       }));
 
       // Call Brain server from Node.js with independent abort signal
-      const brainResponse = await fetch(`${BRAIN_URL}/v1/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Connection: "close",
-        },
-        body: JSON.stringify({
-          messages: sanitizedMessages,
-          modelId,
-          mode: "web",
-          userId,
-          monitorProjects,
-          githubToken: githubToken || undefined,
-          githubUsername: githubUsername || undefined,
-          executionMode: executionMode || undefined,
-        }),
-        signal: abortController.signal,
+      const brainHeaders: Record<string, string> = {
+        "Content-Type": "application/json",
+        Connection: "close",
+      };
+      if (process.env.BRAIN_INTERNAL_SECRET) {
+        brainHeaders["x-brain-secret"] = process.env.BRAIN_INTERNAL_SECRET;
+      }
+
+      const brainPayload = JSON.stringify({
+        messages: sanitizedMessages,
+        modelId,
+        mode: "web",
+        userId,
+        monitorProjects,
+        githubToken: githubToken || undefined,
+        githubUsername: githubUsername || undefined,
+        executionMode: executionMode || undefined,
       });
+
+      let brainResponse: Response;
+      try {
+        brainResponse = await fetch(`${BRAIN_URL}/v1/chat`, {
+          method: "POST",
+          headers: brainHeaders,
+          body: brainPayload,
+          signal: abortController.signal,
+        });
+      } catch (fetchErr: any) {
+        // If connection failed on configured BRAIN_URL, attempt standard alternate port (4500 <-> 3100)
+        const isConnRefused =
+          fetchErr?.message?.includes("fetch failed") ||
+          fetchErr?.message?.includes("ECONNREFUSED") ||
+          fetchErr?.cause?.code === "ECONNREFUSED";
+
+        const alternateUrl = BRAIN_URL.includes(":3100")
+          ? BRAIN_URL.replace(":3100", ":4500")
+          : BRAIN_URL.includes(":4500")
+          ? BRAIN_URL.replace(":4500", ":3100")
+          : null;
+
+        if (isConnRefused && alternateUrl) {
+          try {
+            brainResponse = await fetch(`${alternateUrl}/v1/chat`, {
+              method: "POST",
+              headers: brainHeaders,
+              body: brainPayload,
+              signal: abortController.signal,
+            });
+          } catch {
+            throw fetchErr;
+          }
+        } else {
+          throw fetchErr;
+        }
+      }
 
       if (!brainResponse.ok) {
         const errText = await brainResponse.text();
@@ -424,7 +461,7 @@ class ChatRunnerManager {
     } catch (err: any) {
       const isAbort = err?.name === "AbortError" || abortController.signal.aborted;
       let errorMsg = isAbort ? "Generation stopped." : (err?.message || "Error generating response");
-      if (!isAbort && (errorMsg.includes("fetch failed") || errorMsg.includes("ECONNREFUSED"))) {
+      if (!isAbort && (errorMsg.includes("fetch failed") || errorMsg.includes("ECONNREFUSED") || err?.cause?.code === "ECONNREFUSED")) {
         errorMsg = "Unable to connect to PutmeIn Brain AI service. Please ensure PutmeIn background services are running (run 'ray start' or 'ray status').";
       }
       console.error(`[ChatRunner] Run error for session ${sessionId}:`, errorMsg);

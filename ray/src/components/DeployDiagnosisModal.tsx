@@ -62,10 +62,14 @@ export default function DeployDiagnosisModal({
     setLoading(true);
     setDiagError("");
     try {
+      const selectedModel = typeof window !== "undefined" ? localStorage.getItem("ray_selected_model") : "";
       const res = await fetch(`/api/deployments/${encodeURIComponent(targetId)}/diagnose`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ logs: effectiveLogs }),
+        body: JSON.stringify({
+          logs: effectiveLogs,
+          modelId: selectedModel || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Diagnosis failed");
@@ -185,7 +189,7 @@ export default function DeployDiagnosisModal({
         ) : diagError ? (
           <div className="p-4 rounded-xl" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
             <p className="text-xs text-red-400 font-semibold mb-1">Diagnostic Analysis Failed</p>
-            <p className="text-xs text-red-300/80 mb-3">{diagError}</p>
+            <p className="text-xs text-red-300/80 mb-3 whitespace-pre-wrap leading-relaxed">{diagError}</p>
             <button
               onClick={runDiagnosis}
               className="ray-btn-ghost text-xs px-3.5 py-1.5 cursor-pointer font-medium"

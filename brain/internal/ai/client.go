@@ -42,12 +42,11 @@ type Client struct {
 	Model      ModelConfig
 }
 
-// New creates an AI client using the first available model.
+// New creates an AI client using the first available configured model.
 func New() *Client {
-	models := GetModels()
 	return &Client{
 		httpClient: &http.Client{},
-		Model:      models[0],
+		Model:      GetFirstConfiguredModel(),
 	}
 }
 

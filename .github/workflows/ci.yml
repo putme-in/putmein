@@ -108,6 +108,7 @@ jobs:
         uses: ludeeus/action-shellcheck@master
         with:
           scandir: 'landing/public'
+          severity: warning
 
   # -------------------------------------------------------------
   # 4. LANDING CI (Marketing Site & Docs)

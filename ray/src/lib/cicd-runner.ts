@@ -257,8 +257,12 @@ export async function executePipelineRun(options: PipelineRunOptions) {
 
     let securityBlocked = false;
     if (!skipSecurity) {
+      const t0Sec = Date.now();
       try {
-        const settingsRes = await fetch(`${BRAIN_URL}/v1/settings`).catch(() => null);
+        const settingsRes = await fetch(`${BRAIN_URL}/v1/settings`, {
+          signal: AbortSignal.timeout(10000),
+          headers: { "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
+        }).catch(() => null);
         const settingsData = settingsRes?.ok ? await settingsRes.json() : null;
         const securityEnabled = settingsData?.securityChecksEnabled !== false;
 
@@ -266,13 +270,17 @@ export async function executePipelineRun(options: PipelineRunOptions) {
           accumulatedLogs += "[SECURITY] Running pre-deployment security & CVE audit...\n";
           const secRes = await fetch(`${BRAIN_URL}/v1/security/scan`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "",
+            },
             body: JSON.stringify({
               projectId: pipeline.projectId || pipeline.id,
               projectName: pipeline.name,
               projectPath: targetDir,
               trigger: "cicd_pipeline",
             }),
+            signal: AbortSignal.timeout(60000),
           });
 
           if (secRes.ok) {
@@ -295,6 +303,7 @@ export async function executePipelineRun(options: PipelineRunOptions) {
                 },
               });
 
+              stages[2].durationMs = Date.now() - t0Sec;
               accumulatedLogs += `[SECURITY] Audit result: ${report.dangerCount} Danger, ${report.warnCount} Warning, ${report.infoCount} Info.\n`;
 
               if (report.dangerCount > 0) {
@@ -332,22 +341,121 @@ export async function executePipelineRun(options: PipelineRunOptions) {
               }
 
               stages[2].status = "success";
+              await updateRunProgress();
+            } else {
+              stages[2].status = "failed";
+              stages[2].durationMs = Date.now() - t0Sec;
+              for (let i = 3; i < stages.length; i++) {
+                stages[i].status = "skipped";
+              }
+              accumulatedLogs += "\n[SECURITY ERROR] Security audit service returned an empty report.\n";
+
+              await prisma.rayPipelineRun.update({
+                where: { id: run.id },
+                data: {
+                  status: "failed",
+                  stages: JSON.stringify(stages),
+                  logs: accumulatedLogs,
+                },
+              });
+
+              await prisma.rayPipeline.update({
+                where: { id: pipeline.id },
+                data: { status: "failed", lastRunAt: new Date() },
+              });
+
+              await prisma.rayDeployment.update({
+                where: { id: deployment.id },
+                data: {
+                  status: "failed",
+                  buildLogs: accumulatedLogs,
+                },
+              });
+
+              securityBlocked = true;
+              return;
             }
           } else {
-            accumulatedLogs += `[SECURITY] Security scan service responded with status ${secRes.status}. Continuing...\n`;
-            stages[2].status = "skipped";
+            const errText = await secRes.text().catch(() => "Unknown error");
+            stages[2].status = "failed";
+            stages[2].durationMs = Date.now() - t0Sec;
+            for (let i = 3; i < stages.length; i++) {
+              stages[i].status = "skipped";
+            }
+            accumulatedLogs += `\n[SECURITY ERROR] Security audit scan failed (HTTP ${secRes.status}): ${errText}\n`;
+
+            await prisma.rayPipelineRun.update({
+              where: { id: run.id },
+              data: {
+                status: "failed",
+                stages: JSON.stringify(stages),
+                logs: accumulatedLogs,
+              },
+            });
+
+            await prisma.rayPipeline.update({
+              where: { id: pipeline.id },
+              data: { status: "failed", lastRunAt: new Date() },
+            });
+
+            await prisma.rayDeployment.update({
+              where: { id: deployment.id },
+              data: {
+                status: "failed",
+                buildLogs: accumulatedLogs,
+              },
+            });
+
+            securityBlocked = true;
+            return;
           }
         } else {
           stages[2].status = "skipped";
           accumulatedLogs += "[SECURITY] Security checks disabled in settings. Skipping audit.\n";
+          await updateRunProgress();
         }
       } catch (secErr: any) {
-        accumulatedLogs += `[SECURITY] Security audit service unavailable (${secErr?.message || "connection error"}). Proceeding with deployment.\n`;
-        stages[2].status = "skipped";
+        const isTimeout = secErr?.name === "AbortError" || secErr?.name === "TimeoutError";
+        const errMsg = isTimeout
+          ? "Security audit request timed out after 60 seconds."
+          : `Security audit failed: ${secErr?.message || "connection error"}`;
+
+        accumulatedLogs += `\n[SECURITY ERROR] ${errMsg}\n`;
+        stages[2].status = "failed";
+        stages[2].durationMs = Date.now() - t0Sec;
+        for (let i = 3; i < stages.length; i++) {
+          stages[i].status = "skipped";
+        }
+
+        await prisma.rayPipelineRun.update({
+          where: { id: run.id },
+          data: {
+            status: "failed",
+            stages: JSON.stringify(stages),
+            logs: accumulatedLogs,
+          },
+        });
+
+        await prisma.rayPipeline.update({
+          where: { id: pipeline.id },
+          data: { status: "failed", lastRunAt: new Date() },
+        });
+
+        await prisma.rayDeployment.update({
+          where: { id: deployment.id },
+          data: {
+            status: "failed",
+            buildLogs: accumulatedLogs,
+          },
+        });
+
+        securityBlocked = true;
+        return;
       }
     } else {
       stages[2].status = "overridden";
       accumulatedLogs += "[SECURITY] Security block overridden with dual-consent authorization.\n";
+      await updateRunProgress();
     }
 
     if (securityBlocked) return;

@@ -159,18 +159,25 @@ export async function POST(req: NextRequest) {
                 // Trigger automated post-deployment security scan if enabled
                 (async () => {
                   try {
-                    const settingsRes = await fetch(`${BRAIN_URL}/v1/settings`).catch(() => null);
+                    const settingsRes = await fetch(`${BRAIN_URL}/v1/settings`, {
+                      signal: AbortSignal.timeout(10000),
+                      headers: { "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
+                    }).catch(() => null);
                     const settingsData = settingsRes?.ok ? await settingsRes.json() : null;
                     if (settingsData?.securityChecksEnabled !== false) {
                       const secRes = await fetch(`${BRAIN_URL}/v1/security/scan`, {
                         method: "POST",
-                        headers: { "Content-Type": "application/json" },
+                        headers: {
+                          "Content-Type": "application/json",
+                          "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "",
+                        },
                         body: JSON.stringify({
                           projectId: matchingProject?.id || deployment.id,
                           projectName: name,
                           projectPath: projectPath,
                           trigger: "deploy_first_time",
                         }),
+                        signal: AbortSignal.timeout(60000),
                       });
                       if (secRes.ok) {
                         const secData = await secRes.json();
@@ -190,6 +197,9 @@ export async function POST(req: NextRequest) {
                             },
                           });
                         }
+                      } else {
+                        const errText = await secRes.text().catch(() => "Unknown error");
+                        console.warn(`[Security] Auto-scan failed with HTTP ${secRes.status}: ${errText}`);
                       }
                     }
                   } catch (secErr) {

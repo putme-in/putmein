@@ -8,11 +8,64 @@ const BRAIN_INTERNAL_SECRET = process.env.BRAIN_INTERNAL_SECRET || "";
 
 export const runtime = "nodejs";
 
+function fallbackDiagnosisFromLogs(logs: string) {
+  if (!logs) return null;
+  const lower = logs.toLowerCase();
+
+  // 1. Docker daemon & Named-Pipe Connectivity Errors (Windows / Linux / macOS)
+  if (
+    lower.includes("pipe/docker_engine") ||
+    lower.includes("dockerdesktoplinuxengine") ||
+    lower.includes("cannot connect to the docker daemon") ||
+    lower.includes("is the docker daemon running") ||
+    lower.includes("open //./pipe/docker_engine") ||
+    (lower.includes("error during connect") && (lower.includes("docker") || lower.includes("pipe") || lower.includes("daemon")))
+  ) {
+    return {
+      summary: "Docker Engine Connection Failed: Unable to reach Docker daemon.",
+      rootCause:
+        "PutmeIn was unable to connect to the Docker daemon. On Windows, Docker Desktop may not be running, WSL 2 backend may be stopped, or the named pipe (npipe:////./pipe/docker_engine) is unavailable. On Linux/macOS, the Docker socket (/var/run/docker.sock) is unreachable.",
+      fixSteps: [
+        "Start Docker Desktop (or run 'sudo systemctl start docker' on Linux)",
+        "On Windows: Verify Docker Desktop settings have WSL 2 enabled and engine running",
+        "Ensure your user account belongs to the 'docker-users' (Windows) or 'docker' (Linux) group",
+        "Once Docker is running, click 'Retry Diagnosis' or redeploy the project",
+      ],
+      commands: [],
+      startCommand: "docker info",
+      canAutoFix: false,
+    };
+  }
+
+  // 2. Dockerfile Build & Syntax Errors
+  if (
+    lower.includes("dockerfile parse error") ||
+    lower.includes("failed to solve with frontend dockerfile") ||
+    (lower.includes("docker build") && lower.includes("error:"))
+  ) {
+    return {
+      summary: "Docker Build Failed: Error occurred while building container image.",
+      rootCause: "The container image build encountered a syntax error or a failing command step in the Dockerfile.",
+      fixSteps: [
+        "Inspect the Dockerfile instructions and verify syntax",
+        "Verify all files referenced in COPY/ADD commands exist in the repository",
+        "Test building the image locally using 'docker build .'",
+      ],
+      commands: [],
+      startCommand: "docker build .",
+      canAutoFix: false,
+    };
+  }
+
+  return null;
+}
+
 // POST /api/deployments/[id]/diagnose — AI troubleshooter analyzes why a deployment or container failed
 export async function POST(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
+  let logs = "";
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get("ray_token")?.value;
@@ -39,8 +92,8 @@ export async function POST(
     }
 
     const body = await req.json().catch(() => ({}));
-    const modelId = body.modelId || "";
-    let logs = body.logs || deployment?.buildLogs || "";
+    const modelId = body.modelId || cookieStore.get("ray_selected_model")?.value || "";
+    logs = body.logs || deployment?.buildLogs || "";
 
     if (!deployment && !logs) {
       return NextResponse.json({ error: "Deployment or logs not found" }, { status: 404 });
@@ -81,16 +134,38 @@ export async function POST(
     });
 
     if (!res.ok) {
-      const errData = await res.json().catch(() => ({ error: "AI diagnosis failed" }));
-      return NextResponse.json(errData, { status: res.status });
+      // If Brain fails, check if logs contain an unambiguous recognizable issue like Docker connection failure
+      const fallback = fallbackDiagnosisFromLogs(logs);
+      if (fallback) {
+        return NextResponse.json({ diagnosis: fallback });
+      }
+
+      let errorMessage = "AI diagnosis failed";
+      try {
+        const errData = await res.json();
+        errorMessage = errData.error || errData.message || errorMessage;
+      } catch {
+        const text = await res.text().catch(() => "");
+        if (text && text.trim()) {
+          errorMessage = text.trim();
+        }
+      }
+      return NextResponse.json(
+        { error: `AI request failed: ${errorMessage.replace(/^diagnosis failed:\s*/i, "")}` },
+        { status: res.status }
+      );
     }
 
     const data = await res.json();
     return NextResponse.json(data);
   } catch (err: unknown) {
     console.error("POST /api/deployments/[id]/diagnose:", err);
+    const fallback = fallbackDiagnosisFromLogs(logs);
+    if (fallback) {
+      return NextResponse.json({ diagnosis: fallback });
+    }
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Internal diagnosis error" },
+      { error: err instanceof Error ? `AI request failed: ${err.message}` : "Internal diagnosis error" },
       { status: 500 }
     );
   }

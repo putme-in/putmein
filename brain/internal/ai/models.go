@@ -398,8 +398,22 @@ func GetModels() []ModelConfig {
 	}
 }
 
-// GetModelByID returns the model config for the given ID, or the default (first) model.
+// GetFirstConfiguredModel returns the first model with an active API key, or the default model.
+func GetFirstConfiguredModel() ModelConfig {
+	for _, m := range GetModels() {
+		if strings.TrimSpace(m.APIKey) != "" {
+			return m
+		}
+	}
+	return GetModels()[0]
+}
+
+// GetModelByID returns the model config for the given ID, or the first configured model if id is empty.
 func GetModelByID(id string) ModelConfig {
+	if strings.TrimSpace(id) == "" {
+		return GetFirstConfiguredModel()
+	}
+
 	for _, m := range GetModels() {
 		if m.ID == id {
 			return m
@@ -433,5 +447,5 @@ func GetModelByID(id string) ModelConfig {
 		}
 	}
 
-	return GetModels()[0]
+	return GetFirstConfiguredModel()
 }

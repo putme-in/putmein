@@ -31,7 +31,10 @@ export async function POST(req: NextRequest) {
     // Call Brain security scanner
     const bRes = await fetch(`${BRAIN_URL}/v1/security/scan`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "",
+      },
       body: JSON.stringify({
         projectId,
         projectName,

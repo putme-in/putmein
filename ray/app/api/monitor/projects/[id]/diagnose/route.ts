@@ -25,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const body = await req.json().catch(() => ({}));
     const logs = body.logs || "";
     const command = body.command || project.runCommand || "";
-    const modelId = body.modelId || "";
+    const modelId = body.modelId || cookieStore.get("ray_selected_model")?.value || "";
 
     const res = await fetch(`${BRAIN_URL}/v1/monitor/projects/${id}/diagnose`, {
       method: "POST",
@@ -43,15 +43,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     });
 
     if (!res.ok) {
-      const errData = await res.json().catch(() => ({ error: "Diagnosis failed" }));
-      return NextResponse.json(errData, { status: res.status });
+      let errorMessage = "Diagnosis failed";
+      try {
+        const errData = await res.json();
+        errorMessage = errData.error || errData.message || errorMessage;
+      } catch {
+        const text = await res.text().catch(() => "");
+        if (text && text.trim()) errorMessage = text.trim();
+      }
+      return NextResponse.json(
+        { error: `AI diagnosis failed: ${errorMessage.replace(/^diagnosis failed:\s*/i, "")}` },
+        { status: res.status }
+      );
     }
 
     const data = await res.json();
     return NextResponse.json(data);
   } catch (err: unknown) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Internal error" },
+      { error: err instanceof Error ? `AI request failed: ${err.message}` : "Internal diagnosis error" },
       { status: 500 }
     );
   }

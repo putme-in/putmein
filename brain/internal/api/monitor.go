@@ -332,6 +332,13 @@ func writeJSON(w http.ResponseWriter, v interface{}) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// writeJSONError is a helper to return a structured JSON error response.
+func writeJSONError(w http.ResponseWriter, message string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
 // GET /v1/monitor/process/detect?path=/project/path&id=...
 func monitorDetectProcessHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -460,7 +467,7 @@ func monitorStopProcessHandler(w http.ResponseWriter, r *http.Request) {
 // POST /v1/monitor/projects/{id}/diagnose
 func monitorDiagnoseHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req struct {
@@ -470,17 +477,17 @@ func monitorDiagnoseHandler(w http.ResponseWriter, r *http.Request) {
 		Logs        string `json:"logs,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeJSONError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if req.ProjectPath == "" {
-		http.Error(w, "projectPath is required", http.StatusBadRequest)
+	if strings.TrimSpace(req.ProjectPath) == "" && strings.TrimSpace(req.Logs) == "" {
+		writeJSONError(w, "projectPath or logs are required", http.StatusBadRequest)
 		return
 	}
 
 	diag, err := monitor.DiagnoseProject(r.Context(), req.ModelID, req.ProjectPath, req.Command, req.Logs)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("diagnosis failed: %v", err), http.StatusInternalServerError)
+		writeJSONError(w, fmt.Sprintf("diagnosis failed: %v", err), http.StatusInternalServerError)
 		return
 	}
 

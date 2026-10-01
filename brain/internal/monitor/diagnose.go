@@ -39,73 +39,77 @@ var jsonObjectRe = regexp.MustCompile(`(?s)\{.*\}`)
 
 // DiagnoseProject inspects the project environment and failure logs, then prompts the AI to diagnose the problem.
 func DiagnoseProject(ctx context.Context, modelID, projectPath, command, failureLogs string) (*DiagnosisResult, error) {
-	if projectPath == "" {
-		return nil, fmt.Errorf("projectPath is required")
+	if projectPath == "" && strings.TrimSpace(failureLogs) == "" {
+		return nil, fmt.Errorf("projectPath or failure logs are required")
 	}
 
 	// 1. Gather project context
 	var contextParts []string
-	contextParts = append(contextParts, fmt.Sprintf("Project Path: %s", projectPath))
+	if projectPath != "" {
+		contextParts = append(contextParts, fmt.Sprintf("Project Path: %s", projectPath))
+	}
 	if command != "" {
 		contextParts = append(contextParts, fmt.Sprintf("Attempted Start Command: %s", command))
 	}
 
 	// Check node_modules & package.json
 	hasNodeModules := false
-	if info, err := os.Stat(filepath.Join(projectPath, "node_modules")); err == nil && info.IsDir() {
-		hasNodeModules = true
-	}
-	contextParts = append(contextParts, fmt.Sprintf("Has node_modules directory: %v", hasNodeModules))
-
-	// Check package.json
-	pkgPath := filepath.Join(projectPath, "package.json")
-	if data, err := os.ReadFile(pkgPath); err == nil {
-		contextParts = append(contextParts, fmt.Sprintf("package.json contents:\n%s", string(data)))
-	}
-
-	// Check lockfiles
-	for _, lock := range []string{"package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb"} {
-		if _, err := os.Stat(filepath.Join(projectPath, lock)); err == nil {
-			contextParts = append(contextParts, fmt.Sprintf("Detected lockfile: %s", lock))
+	if projectPath != "" {
+		if info, err := os.Stat(filepath.Join(projectPath, "node_modules")); err == nil && info.IsDir() {
+			hasNodeModules = true
 		}
-	}
+		contextParts = append(contextParts, fmt.Sprintf("Has node_modules directory: %v", hasNodeModules))
 
-	// Check monorepo parent directories
-	parentPkgPath := filepath.Join(projectPath, "..", "package.json")
-	if data, err := os.ReadFile(parentPkgPath); err == nil {
-		contextParts = append(contextParts, fmt.Sprintf("Parent monorepo package.json:\n%s", string(data)))
-	}
-	grandparentPkgPath := filepath.Join(projectPath, "..", "..", "package.json")
-	if data, err := os.ReadFile(grandparentPkgPath); err == nil {
-		contextParts = append(contextParts, fmt.Sprintf("Grandparent monorepo package.json:\n%s", string(data)))
-	}
+		// Check package.json
+		pkgPath := filepath.Join(projectPath, "package.json")
+		if data, err := os.ReadFile(pkgPath); err == nil {
+			contextParts = append(contextParts, fmt.Sprintf("package.json contents:\n%s", string(data)))
+		}
 
-	// Check Python files
-	if reqData, err := os.ReadFile(filepath.Join(projectPath, "requirements.txt")); err == nil {
-		contextParts = append(contextParts, fmt.Sprintf("requirements.txt:\n%s", string(reqData)))
-	}
-	if pyprojectData, err := os.ReadFile(filepath.Join(projectPath, "pyproject.toml")); err == nil {
-		contextParts = append(contextParts, fmt.Sprintf("pyproject.toml:\n%s", string(pyprojectData)))
-	}
+		// Check lockfiles
+		for _, lock := range []string{"package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb"} {
+			if _, err := os.Stat(filepath.Join(projectPath, lock)); err == nil {
+				contextParts = append(contextParts, fmt.Sprintf("Detected lockfile: %s", lock))
+			}
+		}
 
-	// Check Go files
-	if goModData, err := os.ReadFile(filepath.Join(projectPath, "go.mod")); err == nil {
-		contextParts = append(contextParts, fmt.Sprintf("go.mod:\n%s", string(goModData)))
-	}
+		// Check monorepo parent directories
+		parentPkgPath := filepath.Join(projectPath, "..", "package.json")
+		if data, err := os.ReadFile(parentPkgPath); err == nil {
+			contextParts = append(contextParts, fmt.Sprintf("Parent monorepo package.json:\n%s", string(data)))
+		}
+		grandparentPkgPath := filepath.Join(projectPath, "..", "..", "package.json")
+		if data, err := os.ReadFile(grandparentPkgPath); err == nil {
+			contextParts = append(contextParts, fmt.Sprintf("Grandparent monorepo package.json:\n%s", string(data)))
+		}
 
-	// Check Dockerfile
-	if dockerData, err := os.ReadFile(filepath.Join(projectPath, "Dockerfile")); err == nil {
-		contextParts = append(contextParts, fmt.Sprintf("Dockerfile:\n%s", string(dockerData)))
-	}
+		// Check Python files
+		if reqData, err := os.ReadFile(filepath.Join(projectPath, "requirements.txt")); err == nil {
+			contextParts = append(contextParts, fmt.Sprintf("requirements.txt:\n%s", string(reqData)))
+		}
+		if pyprojectData, err := os.ReadFile(filepath.Join(projectPath, "pyproject.toml")); err == nil {
+			contextParts = append(contextParts, fmt.Sprintf("pyproject.toml:\n%s", string(pyprojectData)))
+		}
 
-	// Read recent failure logs from log file if failureLogs is empty
-	if strings.TrimSpace(failureLogs) == "" {
-		safeName := regexp.MustCompile(`[^a-zA-Z0-9_-]`).ReplaceAllString(filepath.Base(projectPath), "_")
-		globPattern := filepath.Join(os.TempDir(), fmt.Sprintf("ray_monitor_%s_*.log", safeName))
-		if matches, err := filepath.Glob(globPattern); err == nil && len(matches) > 0 {
-			latestLog := matches[len(matches)-1]
-			if content, err := ReadFileTail(latestLog, 80); err == nil {
-				failureLogs = content
+		// Check Go files
+		if goModData, err := os.ReadFile(filepath.Join(projectPath, "go.mod")); err == nil {
+			contextParts = append(contextParts, fmt.Sprintf("go.mod:\n%s", string(goModData)))
+		}
+
+		// Check Dockerfile
+		if dockerData, err := os.ReadFile(filepath.Join(projectPath, "Dockerfile")); err == nil {
+			contextParts = append(contextParts, fmt.Sprintf("Dockerfile:\n%s", string(dockerData)))
+		}
+
+		// Read recent failure logs from log file if failureLogs is empty
+		if strings.TrimSpace(failureLogs) == "" {
+			safeName := regexp.MustCompile(`[^a-zA-Z0-9_-]`).ReplaceAllString(filepath.Base(projectPath), "_")
+			globPattern := filepath.Join(os.TempDir(), fmt.Sprintf("ray_monitor_%s_*.log", safeName))
+			if matches, err := filepath.Glob(globPattern); err == nil && len(matches) > 0 {
+				latestLog := matches[len(matches)-1]
+				if content, err := ReadFileTail(latestLog, 80); err == nil {
+					failureLogs = content
+				}
 			}
 		}
 	}
@@ -143,9 +147,15 @@ func DiagnoseProject(ctx context.Context, modelID, projectPath, command, failure
 	}
 
 	if result.StartCommand == "" {
-		result.StartCommand = DetectStartCommand(projectPath)
+		if projectPath != "" {
+			result.StartCommand = DetectStartCommand(projectPath)
+		}
 		if result.StartCommand == "" {
-			result.StartCommand = "npm run dev"
+			if strings.Contains(command, "docker") {
+				result.StartCommand = "docker build & deploy"
+			} else {
+				result.StartCommand = "npm run dev"
+			}
 		}
 	}
 
@@ -155,7 +165,68 @@ func DiagnoseProject(ctx context.Context, modelID, projectPath, command, failure
 func generateFallbackDiagnosis(projectPath, command, logs string, hasNodeModules bool) DiagnosisResult {
 	lowerLogs := strings.ToLower(logs)
 
-	if !hasNodeModules || strings.Contains(lowerLogs, "command not found") || strings.Contains(lowerLogs, "code 127") || strings.Contains(lowerLogs, "cannot find module") {
+	// 1. Docker daemon & Named-Pipe Connectivity Errors (Windows / Linux / macOS)
+	if strings.Contains(lowerLogs, "pipe/docker_engine") ||
+		strings.Contains(lowerLogs, "dockerdesktoplinuxengine") ||
+		strings.Contains(lowerLogs, "cannot connect to the docker daemon") ||
+		strings.Contains(lowerLogs, "is the docker daemon running") ||
+		strings.Contains(lowerLogs, "open //./pipe/docker_engine") ||
+		(strings.Contains(lowerLogs, "error during connect") && (strings.Contains(lowerLogs, "docker") || strings.Contains(lowerLogs, "pipe") || strings.Contains(lowerLogs, "daemon"))) {
+		return DiagnosisResult{
+			Summary:   "Docker Engine Connection Failed: Unable to reach Docker daemon.",
+			RootCause: "PutmeIn was unable to connect to the Docker daemon. On Windows, Docker Desktop may not be running, WSL 2 backend may be stopped, or the named pipe (npipe:////./pipe/docker_engine) is unavailable. On Linux/macOS, the Docker socket (/var/run/docker.sock) is unreachable.",
+			FixSteps: []string{
+				"Start Docker Desktop (or run 'sudo systemctl start docker' on Linux)",
+				"On Windows: Verify Docker Desktop settings have WSL 2 enabled and engine running",
+				"Ensure your user account belongs to the 'docker-users' (Windows) or 'docker' (Linux) group",
+				"Once Docker is running, click 'Retry Diagnosis' or redeploy the project",
+			},
+			Commands:     []string{},
+			StartCommand: "docker info",
+			CanAutoFix:   false,
+		}
+	}
+
+	// 2. Dockerfile Build & Syntax Errors
+	if strings.Contains(lowerLogs, "dockerfile parse error") ||
+		strings.Contains(lowerLogs, "failed to solve with frontend dockerfile") ||
+		(strings.Contains(lowerLogs, "docker build") && strings.Contains(lowerLogs, "error:")) {
+		return DiagnosisResult{
+			Summary:   "Docker Build Failed: Error occurred while building container image.",
+			RootCause: "The container image build encountered a syntax error or a failing command step in the Dockerfile.",
+			FixSteps: []string{
+				"Inspect the Dockerfile instructions and verify syntax",
+				"Verify all files referenced in COPY/ADD commands exist in the repository",
+				"Test building the image locally using 'docker build .'",
+			},
+			Commands:     []string{},
+			StartCommand: "docker build .",
+			CanAutoFix:   false,
+		}
+	}
+
+	// 3. Port Conflicts
+	if strings.Contains(lowerLogs, "eaddrinuse") || strings.Contains(lowerLogs, "port already in use") || strings.Contains(lowerLogs, "address already in use") {
+		startCmd := ""
+		if projectPath != "" {
+			startCmd = DetectStartCommand(projectPath)
+		}
+		if startCmd == "" {
+			startCmd = "npm run dev"
+		}
+		return DiagnosisResult{
+			Summary:      "Port Conflict: Another process is already running on the configured port.",
+			RootCause:    "The target port is currently bound by another active process.",
+			FixSteps:     []string{"Kill conflicting processes or start on an alternate port", "Start development server"},
+			Commands:     []string{},
+			StartCommand: startCmd,
+			CanAutoFix:   false,
+		}
+	}
+
+	// 4. Missing Dependencies (only for local projects that actually have a project directory and aren't pure container deployments)
+	isContainerCommand := strings.Contains(command, "docker")
+	if !isContainerCommand && projectPath != "" && (!hasNodeModules || strings.Contains(lowerLogs, "command not found") || strings.Contains(lowerLogs, "code 127") || strings.Contains(lowerLogs, "cannot find module")) {
 		// Check package manager
 		installCmd := "npm install"
 		if _, err := os.Stat(filepath.Join(projectPath, "pnpm-lock.yaml")); err == nil {
@@ -179,14 +250,16 @@ func generateFallbackDiagnosis(projectPath, command, logs string, hasNodeModules
 		}
 	}
 
-	if strings.Contains(lowerLogs, "eaddrinuse") || strings.Contains(lowerLogs, "port already in use") || strings.Contains(lowerLogs, "address already in use") {
-		return DiagnosisResult{
-			Summary:      "Port Conflict: Another process is already running on the configured port.",
-			RootCause:    "The target port is currently bound by another active process.",
-			FixSteps:     []string{"Kill conflicting processes or start on an alternate port", "Start development server"},
-			Commands:     []string{},
-			StartCommand: DetectStartCommand(projectPath),
-			CanAutoFix:   false,
+	// Default fallback
+	startCmd := ""
+	if projectPath != "" {
+		startCmd = DetectStartCommand(projectPath)
+	}
+	if startCmd == "" {
+		if isContainerCommand {
+			startCmd = "docker build & deploy"
+		} else {
+			startCmd = "npm run dev"
 		}
 	}
 
@@ -195,8 +268,8 @@ func generateFallbackDiagnosis(projectPath, command, logs string, hasNodeModules
 		RootCause:    "The project process exited unexpectedly with an error status.",
 		FixSteps:     []string{"Inspect project configuration and dependencies", "Retry running the project"},
 		Commands:     []string{"npm install"},
-		StartCommand: DetectStartCommand(projectPath),
-		CanAutoFix:   true,
+		StartCommand: startCmd,
+		CanAutoFix:   !isContainerCommand,
 	}
 }
 

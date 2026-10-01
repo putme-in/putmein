@@ -48,7 +48,7 @@ run_with_spinner() {
 
   while kill -0 "$pid" 2>/dev/null; do
     i=$(( (i+1) % 4 ))
-    printf "\b${spin:$i:1}"
+    printf "\\b%s" "${spin:$i:1}"
     sleep 0.15
   done
 
@@ -415,7 +415,7 @@ EOF
   success "Local database created and credentials saved to $PUTMEIN_ENV_FILE"
 
   # Wait for MySQL readiness
-  printf "  ${CYAN}⏳${NC} Waiting for database engine to accept connections..."
+  printf "  %b⏳%b Waiting for database engine to accept connections..." "${CYAN}" "${NC}"
   for i in $(seq 1 30); do
     if docker exec "$MYSQL_CONTAINER" mysqladmin ping -h localhost -uroot -p"${DB_PASSWORD}" &>/dev/null; then
       break

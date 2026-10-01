@@ -148,6 +148,22 @@ export const PROVIDER_GROUPS: ProviderGroup[] = [
         description: "Fast, reliable reasoning & operations",
         badge: "FAST",
       },
+      {
+        id: "gpt-4o",
+        name: "GPT-4o",
+        label: "GPT-4o",
+        provider: "openai",
+        description: "Flagship multimodal foundation model",
+        badge: "POPULAR",
+      },
+      {
+        id: "gpt-4o-mini",
+        name: "GPT-4o Mini",
+        label: "GPT-4o Mini",
+        provider: "openai",
+        description: "Affordable, fast intelligence for everyday tasks",
+        badge: "FAST",
+      },
     ],
   },
   {
@@ -335,6 +351,8 @@ export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
 
   // Find currently selected model (including dynamic custom OpenRouter models)
   const selectedModel = useMemo(() => {
+    if (!value) return MODELS[0];
+
     const found = MODELS.find((m) => m.id === value);
     if (found) return found;
 
@@ -354,17 +372,35 @@ export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
       };
     }
 
-    return MODELS[0];
+    const inferredProvider: ModelItem["provider"] = value.startsWith("claude-")
+      ? "claude"
+      : value.startsWith("gpt-") || value.startsWith("o1") || value.startsWith("o3") || value.startsWith("chatgpt")
+      ? "openai"
+      : value.startsWith("deepseek-")
+      ? "deepseek"
+      : value.startsWith("gemini-")
+      ? "gemini"
+      : "ozias";
+
+    return {
+      id: value,
+      name: value,
+      label: value,
+      provider: inferredProvider,
+      description: `Model: ${value}`,
+      badge: "CUSTOM",
+    };
   }, [value]);
 
   // Active provider tab inside the mega menu (default to the selected model's provider)
   const [activeProvider, setActiveProvider] = useState<string>(
     selectedModel.provider
   );
+  const prevOpenRef = useRef(false);
 
-  // Sync active provider when selected model changes or modal opens
+  // Sync active provider ONLY when the modal transitions from closed to open
   useEffect(() => {
-    if (open) {
+    if (open && !prevOpenRef.current) {
       setActiveProvider(selectedModel.provider);
       if (selectedModel.provider === "openrouter") {
         setCustomModelText(
@@ -372,7 +408,8 @@ export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
         );
       }
     }
-  }, [open, selectedModel]);
+    prevOpenRef.current = open;
+  }, [open, selectedModel.provider, selectedModel.id]);
 
   // Click outside to close
   useEffect(() => {
@@ -404,6 +441,7 @@ export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
 
   const handleCustomModelSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     const trimmed = customModelText.trim();
     if (!trimmed) return;
 
@@ -445,6 +483,7 @@ export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
       {/* Cascading Mega-Menu Popover */}
       {open && (
         <div
+          onMouseDown={(e) => e.stopPropagation()}
           className="absolute bottom-full mb-2.5 left-0 w-[540px] max-w-[calc(100vw-32px)] rounded-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-150 border border-white/10 bg-[#0c0c0c] shadow-2xl backdrop-blur-xl text-white font-sans"
           style={{
             boxShadow:
@@ -491,7 +530,6 @@ export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
                     key={group.id}
                     type="button"
                     onClick={() => setActiveProvider(group.id)}
-                    onMouseEnter={() => setActiveProvider(group.id)}
                     className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left transition-all duration-150 group cursor-pointer ${isActive
                       ? "bg-white/10 text-white font-semibold shadow-sm"
                       : "text-white/60 hover:text-white hover:bg-white/[0.04]"
@@ -593,7 +631,11 @@ export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
                           <button
                             key={model.id}
                             type="button"
-                            onClick={() => {
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
                               onChange(model.id);
                               setOpen(false);
                             }}
@@ -633,7 +675,11 @@ export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
                       <button
                         key={model.id}
                         type="button"
-                        onClick={() => {
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
                           onChange(model.id);
                           setOpen(false);
                         }}
