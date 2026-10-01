@@ -6,6 +6,7 @@ import { detectProjectStack, detectContainerStack } from "@/lib/project-detector
 import { ensureGitPipeline, detectGitRemoteUrl } from "@/lib/cicd-sync";
 import { validateGithubRepoUrl } from "@/lib/github-url";
 import { isValidGitBranch } from "@/lib/github-webhook";
+import { validateTcpPort } from "@/lib/port-validator";
 
 // Helper to strip internal access tokens from repo URLs for clean presentation
 function sanitizeRepoUrl(url: string | null | undefined): string {
@@ -152,6 +153,13 @@ export async function POST(req: NextRequest) {
     const trimmedBranch = typeof branch === "string" ? branch.trim() : "main";
     if (trimmedBranch && !isValidGitBranch(trimmedBranch)) {
       return NextResponse.json({ error: "Invalid target Git branch name" }, { status: 400 });
+    }
+
+    if (port !== undefined && port !== null && port !== "") {
+      const portValidation = validateTcpPort(port);
+      if (!portValidation.valid) {
+        return NextResponse.json({ error: portValidation.error }, { status: 400 });
+      }
     }
 
     let allocatedPort = Number(port);

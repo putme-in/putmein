@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@iconify/react";
 import { validateGithubRepoUrl } from "@/lib/github-url";
+import { validateTcpPort } from "@/lib/port-validator";
 
 interface PipelineItem {
   id: string;
@@ -59,9 +60,17 @@ export default function CicdPage() {
   const [repoUrlError, setRepoUrlError] = useState<string | null>(null);
   const [branch, setBranch] = useState("main");
   const [port, setPort] = useState(3000);
+  const [portError, setPortError] = useState<string | null>(null);
   const [autoDeploy, setAutoDeploy] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState("");
+
+  const openCreateModal = () => {
+    setCreateError("");
+    setRepoUrlError(null);
+    setPortError(null);
+    setShowCreateModal(true);
+  };
 
   const fetchPipelines = useCallback(async () => {
     try {
@@ -113,6 +122,14 @@ export default function CicdPage() {
       return;
     }
     setRepoUrlError(null);
+
+    const portValidation = validateTcpPort(port);
+    if (!portValidation.valid) {
+      setPortError(portValidation.error || "Port must be an integer between 1 and 65535");
+      return;
+    }
+    setPortError(null);
+
     setSubmitting(true);
     setCreateError("");
     try {
@@ -123,7 +140,7 @@ export default function CicdPage() {
           name: trimmedName,
           repoUrl: validation.normalizedUrl || repoUrl.trim(),
           branch: branch.trim() || "main",
-          port,
+          port: portValidation.port,
           autoDeploy,
         }),
       });
@@ -133,6 +150,8 @@ export default function CicdPage() {
       setName("");
       setRepoUrl("");
       setRepoUrlError(null);
+      setPort(3000);
+      setPortError(null);
       fetchPipelines();
       router.push(`/cicd/${data.pipeline.id}`);
     } catch (err: unknown) {
@@ -160,7 +179,7 @@ export default function CicdPage() {
           </p>
         </div>
         <button
-          onClick={() => setShowCreateModal(true)}
+          onClick={openCreateModal}
           className="ray-btn-primary flex items-center gap-1.5 text-xs px-3.5 py-2 cursor-pointer"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -256,7 +275,7 @@ export default function CicdPage() {
             Link a GitHub repository to build and deploy Docker containers automatically whenever commits are pushed.
           </p>
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={openCreateModal}
             className="ray-btn-primary text-xs px-3.5 py-2 cursor-pointer"
           >
             Create Pipeline
@@ -472,10 +491,38 @@ export default function CicdPage() {
                   </label>
                   <input
                     type="number"
+                    min={1}
+                    max={65535}
                     value={port}
-                    onChange={(e) => setPort(Number(e.target.value))}
-                    className="w-full bg-[#141414] border border-white/10 focus:border-white/25 focus:outline-none text-xs font-mono text-white placeholder:text-white/30 rounded-lg py-2 px-3 transition-all"
+                    onChange={(e) => {
+                      const val = e.target.value === "" ? "" : Number(e.target.value);
+                      setPort(val as any);
+                      if (portError) {
+                        const check = validateTcpPort(val);
+                        if (check.valid) setPortError(null);
+                      }
+                    }}
+                    onBlur={() => {
+                      const check = validateTcpPort(port);
+                      if (!check.valid) {
+                        setPortError(check.error || "Port must be an integer between 1 and 65535");
+                      } else {
+                        setPortError(null);
+                      }
+                    }}
+                    className={`w-full bg-[#141414] border text-xs font-mono text-white placeholder:text-white/30 rounded-lg py-2 px-3 transition-all focus:outline-none ${
+                      portError
+                        ? "border-rose-500/60 focus:border-rose-500 text-rose-200"
+                        : "border-white/10 focus:border-white/25"
+                    }`}
+                    placeholder="3000"
                   />
+                  {portError && (
+                    <p className="text-[11px] text-rose-400 mt-1.5 flex items-center gap-1">
+                      <Icon icon="lucide:alert-circle" width={12} height={12} />
+                      <span>{portError}</span>
+                    </p>
+                  )}
                 </div>
               </div>
 

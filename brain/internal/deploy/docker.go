@@ -91,6 +91,19 @@ var ReservedPorts = map[int]string{
 	27017: "MongoDB",
 }
 
+func init() {
+	if rp := os.Getenv("RAY_PORT"); rp != "" {
+		if p, err := strconv.Atoi(rp); err == nil && p > 0 {
+			ReservedPorts[p] = "Ray Dashboard (Live)"
+		}
+	}
+	if bp := os.Getenv("BRAIN_PORT"); bp != "" {
+		if p, err := strconv.Atoi(bp); err == nil && p > 0 {
+			ReservedPorts[p] = "Brain AI Backend (Live)"
+		}
+	}
+}
+
 // isSocketFree tests if a port is truly available across wildcard, 0.0.0.0, and 127.0.0.1 interfaces.
 // Each socket is tested and immediately closed to verify clean bindability.
 func isSocketFree(port int) bool {

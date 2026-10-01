@@ -160,9 +160,19 @@ async function main() {
   }
 
   // 4. Build Ray Next.js Standalone
+  const rayNodeModules = path.join(RAY_DIR, "node_modules");
+  if (!fs.existsSync(rayNodeModules) || !fs.existsSync(path.join(rayNodeModules, "prisma"))) {
+    log("Installing dependencies for Ray...");
+    try {
+      execSync("npm ci", { cwd: RAY_DIR, stdio: "inherit" });
+    } catch (_) {
+      execSync("npm install", { cwd: RAY_DIR, stdio: "inherit" });
+    }
+  }
+
   log("Generating Prisma client for Ray...");
   try {
-    execSync("npx prisma generate", {
+    execSync("npx --no-install prisma generate", {
       cwd: RAY_DIR,
       stdio: "inherit",
     });

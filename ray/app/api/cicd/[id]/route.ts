@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { verifyToken } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { detectProjectStack, detectContainerStack } from "@/lib/project-detector";
+import { validateTcpPort } from "@/lib/port-validator";
 
 const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
@@ -149,11 +150,26 @@ export async function PATCH(
 
     const body = await req.json();
 
+    if (body.port !== undefined) {
+      const portValidation = validateTcpPort(body.port);
+      if (!portValidation.valid) {
+        return NextResponse.json({ error: portValidation.error }, { status: 400 });
+      }
+    }
+
+    if (body.branch !== undefined) {
+      const branchStr = String(body.branch).trim();
+      const { isValidGitBranch } = await import("@/lib/github-webhook");
+      if (branchStr && !isValidGitBranch(branchStr)) {
+        return NextResponse.json({ error: "Invalid target Git branch name" }, { status: 400 });
+      }
+    }
+
     const updated = await prisma.rayPipeline.update({
       where: { id },
       data: {
         ...(body.branch !== undefined && { branch: String(body.branch).trim() }),
-        ...(body.port !== undefined && { port: Number(body.port) || 3000 }),
+        ...(body.port !== undefined && { port: Number(body.port) }),
         ...(body.autoDeploy !== undefined && { autoDeploy: Boolean(body.autoDeploy) }),
         ...(body.dockerfilePath !== undefined && { dockerfilePath: String(body.dockerfilePath).trim() }),
       },

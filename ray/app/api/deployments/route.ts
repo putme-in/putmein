@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
                 containerName: c.name,
                 imageName: c.image || `${c.name}:latest`,
                 status: c.state === "running" ? "healthy" : (c.state === "restarting" ? "building" : "stopped"),
-                hostPort: c.port || 3000,
+                hostPort: c.port || null,
                 deployUrl: c.url || (c.port ? `http://localhost:${c.port}` : ""),
                 buildLogs: `Docker container ${c.name} running from image ${c.image || "custom"}.`,
               },

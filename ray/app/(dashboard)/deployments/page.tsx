@@ -48,17 +48,27 @@ interface PortClaim {
   containerName?: string;
 }
 
+interface PortConflictItem {
+  port: number;
+  deploymentId?: string;
+  deploymentName: string;
+  conflictingWith: string;
+  reason: string;
+}
+
 interface PortRegistryState {
   claimed: PortClaim[];
   reserved: number[];
   nextFreePort: number;
   suggestedPorts: number[];
+  conflicts?: PortConflictItem[];
   stats?: {
     totalClaimed: number;
     projectPortsCount: number;
     deploymentPortsCount: number;
     dockerPortsCount: number;
     systemListenersCount: number;
+    conflictsCount?: number;
   };
 }
 
@@ -80,6 +90,7 @@ export default function DeploymentsPage() {
   const [copied, setCopied] = useState(false);
   const [portRegistry, setPortRegistry] = useState<PortRegistryState | null>(null);
   const [showAllPorts, setShowAllPorts] = useState(false);
+  const [reallocatingId, setReallocatingId] = useState<string | null>(null);
 
   const fetchDeployments = useCallback(async () => {
     try {
@@ -98,6 +109,22 @@ export default function DeploymentsPage() {
     } catch { /* silent */ }
     finally { setLoading(false); }
   }, []);
+
+  const handleReallocatePort = async (depId: string) => {
+    setReallocatingId(depId);
+    try {
+      const res = await fetch(`/api/deployments/${depId}/reallocate`, {
+        method: "POST",
+      });
+      if (res.ok) {
+        await fetchDeployments();
+      }
+    } catch {
+      /* silent */
+    } finally {
+      setReallocatingId(null);
+    }
+  };
 
   const handleRedeploy = async (dep: DeploymentItem) => {
     setRedeployingId(dep.id);
@@ -207,8 +234,8 @@ export default function DeploymentsPage() {
           <div className="mt-3 flex items-center gap-2 flex-wrap">
             <span className="text-[11px] font-mono text-white/40 mr-1">Active Bindings:</span>
             {portRegistry.claimed
-              .filter((c) => c.type === "dashboard_project" || c.type === "docker" || c.type === "deployment" || (c.type === "reserved" && (c.port === 4567 || c.port === 4500)))
-              .slice(0, 8)
+              .filter((c) => c.type === "dashboard_project" || c.type === "docker" || c.type === "deployment" || (c.type === "reserved" && (c.source === "platform" || c.port === 3000 || c.port === 3100 || c.port === 4567 || c.port === 4500)))
+              .slice(0, 10)
               .map((c) => (
                 <div
                   key={c.port}
@@ -230,6 +257,38 @@ export default function DeploymentsPage() {
               </span>
             )}
           </div>
+
+          {/* Port Conflicts Alert Banner */}
+          {portRegistry.conflicts && portRegistry.conflicts.length > 0 && (
+            <div className="mt-3.5 p-3 rounded-xl bg-rose-500/[0.1] border border-rose-500/25 flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-rose-300 text-xs font-semibold">
+                  <Icon icon="lucide:alert-triangle" width={14} height={14} className="text-rose-400 shrink-0" />
+                  <span>{portRegistry.conflicts.length} Port Conflict{portRegistry.conflicts.length > 1 ? "s" : ""} Detected</span>
+                </div>
+                <span className="text-[10px] font-mono text-rose-400/80">Next Free Port: :{portRegistry.nextFreePort}</span>
+              </div>
+              <div className="flex flex-col gap-1.5 mt-0.5">
+                {portRegistry.conflicts.map((conf, idx) => (
+                  <div key={idx} className="flex items-center justify-between gap-2 text-[11px] font-mono bg-black/40 px-2.5 py-1.5 rounded-lg border border-rose-500/15">
+                    <div className="flex items-center gap-2 truncate text-white/80">
+                      <span className="text-rose-400 font-bold">:{conf.port}</span>
+                      <span className="truncate"><strong>{conf.deploymentName}</strong> conflicts with {conf.conflictingWith}</span>
+                    </div>
+                    {conf.deploymentId && (
+                      <button
+                        onClick={() => handleReallocatePort(conf.deploymentId!)}
+                        disabled={reallocatingId === conf.deploymentId}
+                        className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 transition-colors shrink-0 cursor-pointer disabled:opacity-50"
+                      >
+                        {reallocatingId === conf.deploymentId ? "Reallocating…" : `Reallocate to :${portRegistry.nextFreePort}`}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Full Ports Accordion */}
           {showAllPorts && (
@@ -361,6 +420,21 @@ export default function DeploymentsPage() {
                           <span>:{dep.hostPort || dep.container?.port}</span>
                         </span>
                       )}
+
+                      {/* 5. Conflict Warning Badge */}
+                      {(() => {
+                        const depConflict = portRegistry?.conflicts?.find(c => c.deploymentId === dep.id || (dep.hostPort && c.port === dep.hostPort));
+                        if (!depConflict) return null;
+                        return (
+                          <span
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-rose-500/15 border border-rose-500/30 text-[10.5px] font-mono text-rose-300"
+                            title={depConflict.reason}
+                          >
+                            <Icon icon="lucide:alert-triangle" width={11} height={11} className="text-rose-400" />
+                            <span>Conflict (:{depConflict.port})</span>
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     <p className="text-[11px] font-mono text-white/40 truncate mt-1">
@@ -381,6 +455,22 @@ export default function DeploymentsPage() {
                       <span>Open App ↗</span>
                     </a>
                   )}
+
+                  {(() => {
+                    const depConflict = portRegistry?.conflicts?.find(c => c.deploymentId === dep.id || (dep.hostPort && c.port === dep.hostPort));
+                    if (!depConflict || !portRegistry) return null;
+                    return (
+                      <button
+                        onClick={() => handleReallocatePort(dep.id)}
+                        disabled={reallocatingId === dep.id}
+                        className="px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        title={`Port :${depConflict.port} conflicts with ${depConflict.conflictingWith}. Reallocate to guaranteed free port :${portRegistry.nextFreePort}`}
+                      >
+                        {reallocatingId === dep.id ? <SpinIcon size={12} /> : <Icon icon="lucide:refresh-cw" width={12} height={12} />}
+                        <span>Fix Port (:{portRegistry.nextFreePort})</span>
+                      </button>
+                    );
+                  })()}
 
                   {dep.status === "failed" && (
                     <button

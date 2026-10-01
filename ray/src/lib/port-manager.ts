@@ -2,47 +2,33 @@ import net from "net";
 import { exec } from "child_process";
 import prisma from "@/lib/prisma";
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:3100";
+const BRAIN_URL = process.env.BRAIN_URL || (process.env.BRAIN_PORT ? `http://localhost:${process.env.BRAIN_PORT}` : "http://localhost:3100");
 
-export const PERMANENT_RESERVED_PORTS = [
-  3000, // Ray Dashboard Web Server
-  3100, // Brain AI Engine Server
-  3306, // MariaDB / MySQL
-  5432, // PostgreSQL
-  6379, // Redis
-  27017, // MongoDB
-];
-
-export interface ClaimedPortInfo {
-  port: number;
-  name: string;
-  type: "dashboard_project" | "deployment" | "pipeline" | "docker" | "system" | "reserved";
-  source: string;
-  status: string;
-  url?: string;
-  containerName?: string;
-}
-
-export interface PortRegistryResult {
-  claimed: ClaimedPortInfo[];
-  reserved: number[];
-  nextFreePort: number;
-  suggestedPorts: number[];
-  stats: {
-    totalClaimed: number;
-    projectPortsCount: number;
-    deploymentPortsCount: number;
-    dockerPortsCount: number;
-    systemListenersCount: number;
-  };
-}
+export {
+  PERMANENT_RESERVED_PORTS,
+  type ClaimedPortInfo,
+  type PortConflictInfo,
+  type PortRegistryResult,
+  getConfiguredPlatformPorts,
+  getAllReservedPorts,
+  isReservedPlatformPort,
+} from "./port-config";
+import {
+  PERMANENT_RESERVED_PORTS,
+  type ClaimedPortInfo,
+  type PortConflictInfo,
+  type PortRegistryResult,
+  getConfiguredPlatformPorts,
+  getAllReservedPorts,
+} from "./port-config";
 
 /**
  * Robust double-interface socket verification test for macOS Darwin and Linux.
  * Ensures that neither wildcard (0.0.0.0 & ::) nor 0.0.0.0 is bound by Docker or any other daemon.
  */
 export function isPortAvailable(port: number): Promise<boolean> {
-  if (PERMANENT_RESERVED_PORTS.includes(port)) {
+  const allReserved = getAllReservedPorts();
+  if (allReserved.includes(port)) {
     return Promise.resolve(false);
   }
 
@@ -115,11 +101,12 @@ export function getSystemListeningSockets(): Promise<{ port: number; command: st
  */
 export async function getFullPortRegistry(userId?: string): Promise<PortRegistryResult> {
   const claimedMap = new Map<number, ClaimedPortInfo>();
+  const conflicts: PortConflictInfo[] = [];
 
-  // 1. Add permanent reserved platform ports
+  // 1. Add permanent reserved platform ports (Dev 3000 / 3100)
   claimedMap.set(3000, {
     port: 3000,
-    name: "Ray Dashboard",
+    name: "Ray Dashboard (Dev)",
     type: "reserved",
     source: "platform",
     status: "active",
@@ -127,12 +114,35 @@ export async function getFullPortRegistry(userId?: string): Promise<PortRegistry
   });
   claimedMap.set(3100, {
     port: 3100,
-    name: "Brain AI Backend",
+    name: "Brain AI Backend (Dev)",
     type: "reserved",
     source: "platform",
     status: "active",
     url: "http://localhost:3100",
   });
+
+  // 1b. Add configured live platform ports (if different from dev)
+  const { liveRayPort, liveBrainPort } = getConfiguredPlatformPorts();
+  if (liveRayPort && liveRayPort !== 3000) {
+    claimedMap.set(liveRayPort, {
+      port: liveRayPort,
+      name: "Ray Dashboard (Live)",
+      type: "reserved",
+      source: "platform",
+      status: "active",
+      url: `http://localhost:${liveRayPort}`,
+    });
+  }
+  if (liveBrainPort && liveBrainPort !== 3100) {
+    claimedMap.set(liveBrainPort, {
+      port: liveBrainPort,
+      name: "Brain AI Backend (Live)",
+      type: "reserved",
+      source: "platform",
+      status: "active",
+      url: `http://localhost:${liveBrainPort}`,
+    });
+  }
 
   for (const p of PERMANENT_RESERVED_PORTS) {
     if (!claimedMap.has(p)) {
@@ -182,8 +192,10 @@ export async function getFullPortRegistry(userId?: string): Promise<PortRegistry
     console.warn("[PortManager] Error querying projects:", err);
   }
 
-  // 3. Fetch Ray Deployments
+  // 3. Fetch Ray Deployments and scan for port conflicts
   let deploymentPortsCount = 0;
+  const seenDeploymentPorts = new Map<number, { id: string; name: string }>();
+
   try {
     const deployments = await prisma.rayDeployment.findMany({
       ...(userId ? { where: { userId } } : {}),
@@ -200,16 +212,37 @@ export async function getFullPortRegistry(userId?: string): Promise<PortRegistry
     for (const dep of deployments) {
       const port = dep.hostPort || (dep.deployUrl ? parseInt(dep.deployUrl.match(/:(\d+)/)?.[1] || "0", 10) : 0);
       if (port > 0) {
-        claimedMap.set(port, {
-          port,
-          name: dep.name,
-          type: "deployment",
-          source: "RayDeployment",
-          status: dep.status,
-          url: dep.deployUrl || `http://localhost:${port}`,
-          containerName: dep.containerName || `ray-${dep.name}`,
-        });
-        deploymentPortsCount++;
+        if (claimedMap.has(port)) {
+          const target = claimedMap.get(port)!;
+          conflicts.push({
+            port,
+            deploymentId: dep.id,
+            deploymentName: dep.name,
+            conflictingWith: target.name,
+            reason: `Port :${port} conflicts with ${target.name} (${target.source}).`,
+          });
+        } else if (seenDeploymentPorts.has(port)) {
+          const other = seenDeploymentPorts.get(port)!;
+          conflicts.push({
+            port,
+            deploymentId: dep.id,
+            deploymentName: dep.name,
+            conflictingWith: other.name,
+            reason: `Port :${port} collides with another deployment "${other.name}".`,
+          });
+        } else {
+          claimedMap.set(port, {
+            port,
+            name: dep.name,
+            type: "deployment",
+            source: "RayDeployment",
+            status: dep.status,
+            url: dep.deployUrl || `http://localhost:${port}`,
+            containerName: dep.containerName || `ray-${dep.name}`,
+          });
+          deploymentPortsCount++;
+          seenDeploymentPorts.set(port, { id: dep.id, name: dep.name });
+        }
       }
     }
   } catch (err) {
@@ -252,16 +285,18 @@ export async function getFullPortRegistry(userId?: string): Promise<PortRegistry
       for (const c of containers) {
         if (c.port && c.port > 0) {
           const cleanName = (c.name || "").replace(/^ray-/, "");
-          claimedMap.set(c.port, {
-            port: c.port,
-            name: cleanName || c.name,
-            type: "docker",
-            source: "Docker Container",
-            status: c.state || "running",
-            url: c.url || `http://localhost:${c.port}`,
-            containerName: c.name,
-          });
-          dockerPortsCount++;
+          if (!claimedMap.has(c.port)) {
+            claimedMap.set(c.port, {
+              port: c.port,
+              name: cleanName || c.name,
+              type: "docker",
+              source: "Docker Container",
+              status: c.state || "running",
+              url: c.url || `http://localhost:${c.port}`,
+              containerName: c.name,
+            });
+            dockerPortsCount++;
+          }
         }
       }
     }
@@ -289,11 +324,12 @@ export async function getFullPortRegistry(userId?: string): Promise<PortRegistry
   // Sort claimed ports numerically
   const claimed = Array.from(claimedMap.values()).sort((a, b) => a.port - b.port);
 
-  // 7. Calculate Next Available Free Ports starting from 4000
+  // 7. Calculate Next Available Free Ports starting from 4000 (excluding all reserved ports)
+  const allReserved = getAllReservedPorts();
   const suggestedPorts: number[] = [];
   let candidate = 4000;
   while (suggestedPorts.length < 5 && candidate < 6000) {
-    if (!claimedMap.has(candidate)) {
+    if (!claimedMap.has(candidate) && !allReserved.includes(candidate)) {
       const available = await isPortAvailable(candidate);
       if (available) {
         suggestedPorts.push(candidate);
@@ -306,15 +342,17 @@ export async function getFullPortRegistry(userId?: string): Promise<PortRegistry
 
   return {
     claimed,
-    reserved: PERMANENT_RESERVED_PORTS,
+    reserved: allReserved,
     nextFreePort,
     suggestedPorts,
+    conflicts,
     stats: {
       totalClaimed: claimed.length,
       projectPortsCount,
       deploymentPortsCount,
       dockerPortsCount,
       systemListenersCount,
+      conflictsCount: conflicts.length,
     },
   };
 }
@@ -335,12 +373,13 @@ export async function findGuaranteedFreePort(
 }> {
   const registry = await getFullPortRegistry(userId);
   const claimedMap = new Map(registry.claimed.map((c) => [c.port, c]));
+  const allReserved = registry.reserved;
 
   if (
     preferredPort &&
     preferredPort > 0 &&
     !claimedMap.has(preferredPort) &&
-    !PERMANENT_RESERVED_PORTS.includes(preferredPort)
+    !allReserved.includes(preferredPort)
   ) {
     const available = await isPortAvailable(preferredPort);
     if (available) {

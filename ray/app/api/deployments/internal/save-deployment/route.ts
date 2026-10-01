@@ -167,7 +167,7 @@ export async function POST(req: NextRequest) {
       const { ensureGitPipeline } = await import("@/lib/cicd-sync");
       await ensureGitPipeline(userId, cleanName, projectPath, {
         projectId: projectId || savedDeployment.id,
-        port: hostPort || 3000,
+        port: hostPort || undefined,
       }).catch(() => {});
     }
 

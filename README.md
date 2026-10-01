@@ -108,6 +108,7 @@ git clone https://github.com/putme-in/putmein.git
 cd putmein
 
 # Install dependencies and build standalone distribution
+npm install
 npm run build
 
 # Start services locally

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@iconify/react";
 import DeployDiagnosisModal from "@/components/DeployDiagnosisModal";
 import { getPrimaryProjectUrl } from "@/lib/domains";
+import { validateTcpPort } from "@/lib/port-validator";
 
 interface PipelineStage {
   id: string;
@@ -61,6 +62,8 @@ export default function CicdDetailPage({
   const [editAutoDeploy, setEditAutoDeploy] = useState(true);
   const [editDockerfile, setEditDockerfile] = useState("Dockerfile");
   const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsPortError, setSettingsPortError] = useState<string | null>(null);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
 
   const fetchPipeline = useCallback(async () => {
     try {
@@ -159,24 +162,36 @@ export default function CicdDetailPage({
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSettingsPortError(null);
+    setSettingsError(null);
+
+    const portValidation = validateTcpPort(editPort);
+    if (!portValidation.valid) {
+      setSettingsPortError(portValidation.error || "Port must be an integer between 1 and 65535");
+      return;
+    }
+
     setSavingSettings(true);
     try {
       const res = await fetch(`/api/cicd/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          branch: editBranch,
-          port: editPort,
+          branch: editBranch.trim(),
+          port: portValidation.port,
           autoDeploy: editAutoDeploy,
-          dockerfilePath: editDockerfile,
+          dockerfilePath: editDockerfile.trim(),
         }),
       });
-      if (res.ok) {
-        setShowSettingsModal(false);
-        fetchPipeline();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || `Failed to update settings (${res.status})`);
       }
-    } catch { /* silent */ }
-    finally {
+      setShowSettingsModal(false);
+      fetchPipeline();
+    } catch (err: unknown) {
+      setSettingsError(err instanceof Error ? err.message : "Failed to update settings");
+    } finally {
       setSavingSettings(false);
     }
   };
@@ -354,7 +369,11 @@ export default function CicdDetailPage({
           )}
 
           <button
-            onClick={() => setShowSettingsModal(true)}
+            onClick={() => {
+              setSettingsPortError(null);
+              setSettingsError(null);
+              setShowSettingsModal(true);
+            }}
             className="ray-btn-ghost flex items-center gap-1.5 text-xs px-3 py-2 cursor-pointer"
             title="Configure Pipeline Settings"
           >
@@ -900,10 +919,44 @@ export default function CicdDetailPage({
                 <input
                   type="number"
                   required
+                  min={1}
+                  max={65535}
                   value={editPort}
-                  onChange={(e) => setEditPort(Number(e.target.value))}
-                  className="w-full bg-[#141414] border border-white/10 focus:border-white/25 focus:outline-none text-xs font-mono text-white rounded-lg py-2 px-3 transition-all"
+                  onChange={(e) => {
+                    const val = e.target.value === "" ? "" : Number(e.target.value);
+                    setEditPort(val as any);
+                    if (settingsPortError) {
+                      const check = validateTcpPort(val);
+                      if (check.valid) {
+                        setSettingsPortError(null);
+                      }
+                    }
+                  }}
+                  onBlur={() => {
+                    const check = validateTcpPort(editPort);
+                    if (!check.valid) {
+                      setSettingsPortError(check.error || "Port must be an integer between 1 and 65535");
+                    } else {
+                      setSettingsPortError(null);
+                    }
+                  }}
+                  className={`w-full bg-[#141414] border text-xs font-mono text-white rounded-lg py-2 px-3 transition-all focus:outline-none ${
+                    settingsPortError
+                      ? "border-rose-500/60 focus:border-rose-500 text-rose-200"
+                      : "border-white/10 focus:border-white/25"
+                  }`}
+                  placeholder="3000"
                 />
+                {settingsPortError ? (
+                  <p className="text-[11px] text-rose-400 mt-1.5 flex items-center gap-1">
+                    <Icon icon="lucide:alert-circle" width={12} height={12} />
+                    <span>{settingsPortError}</span>
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-white/30 mt-1 font-mono">
+                    Valid TCP port between 1 and 65535
+                  </p>
+                )}
               </div>
 
               <div>
@@ -930,6 +983,13 @@ export default function CicdDetailPage({
                   Enable automated webhook deployment on <code className="text-[11px] text-white">git push</code>
                 </label>
               </div>
+
+              {settingsError && (
+                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-300 flex items-center gap-2">
+                  <Icon icon="lucide:alert-circle" width={14} height={14} className="shrink-0 text-rose-400" />
+                  <span>{settingsError}</span>
+                </div>
+              )}
 
               <div className="flex gap-2.5 mt-2">
                 <button
