@@ -118,6 +118,12 @@ test("sanitizeDist removes all forbidden files, env variants, and raw source dir
     fs.writeFileSync(allowedStaticFile, "// bundle");
     const allowedBrainBin = path.join(distBrain, "brain");
     fs.writeFileSync(allowedBrainBin, "binary");
+    const allowedPrismaConfig = path.join(distRay, "prisma.config.ts");
+    fs.writeFileSync(allowedPrismaConfig, "export default {}");
+    const allowedPrismaDir = path.join(distRay, "prisma");
+    fs.mkdirSync(allowedPrismaDir, { recursive: true });
+    const allowedSchemaPrisma = path.join(allowedPrismaDir, "schema.prisma");
+    fs.writeFileSync(allowedSchemaPrisma, "datasource db { provider = 'mysql' }");
 
     // Forbidden files in dist/ray
     for (const f of FORBIDDEN_DIST_RAY_FILES) {
@@ -174,6 +180,8 @@ test("sanitizeDist removes all forbidden files, env variants, and raw source dir
     assert.equal(fs.existsSync(allowedRayServer), true, "dist/ray/server.js must be preserved");
     assert.equal(fs.existsSync(allowedStaticFile), true, "dist/ray/.next/static/bundle.js must be preserved");
     assert.equal(fs.existsSync(allowedBrainBin), true, "dist/brain/brain binary must be preserved");
+    assert.equal(fs.existsSync(allowedPrismaConfig), true, "dist/ray/prisma.config.ts must be preserved for Prisma 7");
+    assert.equal(fs.existsSync(allowedSchemaPrisma), true, "dist/ray/prisma/schema.prisma must be preserved");
   } finally {
     try {
       makeWritableRecursive(tempDist);

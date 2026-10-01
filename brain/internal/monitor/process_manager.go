@@ -59,7 +59,7 @@ func DetectDockerContainer(ctx context.Context, projectName, projectPath string)
 		return nil
 	}
 
-	out, err := RunLogCommand(ctx, `docker ps --format "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null`)
+	out, err := RunLogCommand(ctx, `docker ps --format "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"`)
 	if err != nil || strings.TrimSpace(out) == "" {
 		return nil
 	}

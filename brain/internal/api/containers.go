@@ -57,7 +57,7 @@ func getCachedDockerStats(forceSync bool) map[string][2]string {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 
-		statsOut, err := monitor.RunLogCommand(ctx, `docker stats --no-stream --format "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" 2>/dev/null`)
+		statsOut, err := monitor.RunLogCommand(ctx, `docker stats --no-stream --format "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"`)
 		if err == nil && strings.TrimSpace(statsOut) != "" {
 			newMap := make(map[string][2]string)
 			for _, sLine := range strings.Split(strings.TrimSpace(statsOut), "\n") {
@@ -111,7 +111,7 @@ func containersListHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, err := monitor.RunLogCommand(r.Context(), `docker ps -a --format "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}\t{{.CreatedAt}}" 2>/dev/null`)
+	out, err := monitor.RunLogCommand(r.Context(), `docker ps -a --format "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}\t{{.CreatedAt}}"`)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -207,7 +207,7 @@ func containerInspectHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	out, err := monitor.RunLogCommand(r.Context(), fmt.Sprintf("docker inspect %s 2>/dev/null", shellQuote(id)))
+	out, err := monitor.RunLogCommand(r.Context(), fmt.Sprintf("docker inspect %s", shellQuote(id)))
 	if err != nil || strings.TrimSpace(out) == "" || out == "[]" {
 		http.Error(w, "container not found", http.StatusNotFound)
 		return

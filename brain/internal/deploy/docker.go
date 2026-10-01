@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -163,7 +164,7 @@ func GetUsedPortsMap() (map[int]string, error) {
 	}
 
 	// 2. Local Docker container inspection (docker ps -a)
-	if out, err := monitor.RunLogCommand(context.Background(), `docker ps -a --format "{{.Ports}}\t{{.Names}}" 2>/dev/null`); err == nil {
+	if out, err := monitor.RunLogCommand(context.Background(), `docker ps -a --format "{{.Ports}}\t{{.Names}}"`); err == nil {
 		portRe := regexp.MustCompile(`(?::|0\.0\.0\.0:)(\d+)->`)
 		for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 			parts := strings.Split(line, "\t")
@@ -596,7 +597,7 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 		Message: fmt.Sprintf("Building Docker image '%s'...", imageName),
 	})
 
-	buildCmd := exec.CommandContext(ctx, "docker", "build", "-t", imageName, ".")
+	buildCmd := dockerCmd(ctx, "build", "-t", imageName, ".")
 	buildCmd.Dir = req.ProjectPath
 
 	stdout, err := buildCmd.StdoutPipe()
@@ -657,7 +658,7 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 	})
 
 	// Clean up any existing container with the same name
-	_ = exec.Command("docker", "rm", "-f", containerName).Run()
+	_ = dockerCmd(nil, "rm", "-f", containerName).Run()
 
 	resolvedPort, pErr := FindGuaranteedFreePort(req.HostPort, req.Name)
 	if pErr != nil {
@@ -690,7 +691,7 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 	}
 	runArgs = append(runArgs, imageName)
 
-	runOut, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput()
+	runOut, err := dockerCmd(ctx, runArgs...).CombinedOutput()
 	if err != nil {
 		errMsg := fmt.Sprintf("Failed to run container: %v\n%s", err, string(runOut))
 		emit(DeployStepEvent{
@@ -877,12 +878,55 @@ func SaveDeploymentViaRayAPI(res *DeployResult, req DeployRequest) {
 	}
 }
 
+// ResolveDockerEnv resolves the environment variables for Docker CLI execution on a given OS.
+// On Windows, if DOCKER_HOST is not set or points to the obsolete dockerDesktopLinuxEngine pipe,
+// it defaults to the official Docker Desktop engine pipe npipe:////./pipe/docker_engine.
+func ResolveDockerEnv(currentEnv []string, targetOS string) []string {
+	if targetOS != "windows" {
+		return currentEnv
+	}
+	const defaultWinPipe = "npipe:////./pipe/docker_engine"
+	hasHost := false
+	out := make([]string, len(currentEnv))
+	copy(out, currentEnv)
+
+	for i, kv := range out {
+		if strings.HasPrefix(strings.ToUpper(kv), "DOCKER_HOST=") {
+			val := kv[len("DOCKER_HOST="):]
+			if val == "" || strings.Contains(val, "dockerDesktopLinuxEngine") {
+				out[i] = "DOCKER_HOST=" + defaultWinPipe
+			}
+			hasHost = true
+			break
+		}
+	}
+	if !hasHost {
+		out = append(out, "DOCKER_HOST="+defaultWinPipe)
+	}
+	return out
+}
+
+func getDockerEnv() []string {
+	return ResolveDockerEnv(os.Environ(), runtime.GOOS)
+}
+
+func dockerCmd(ctx context.Context, args ...string) *exec.Cmd {
+	var cmd *exec.Cmd
+	if ctx != nil {
+		cmd = exec.CommandContext(ctx, "docker", args...)
+	} else {
+		cmd = exec.Command("docker", args...)
+	}
+	cmd.Env = getDockerEnv()
+	return cmd
+}
+
 // GetContainerLogs returns recent logs from the docker container.
 func GetContainerLogs(containerName string, lines int) (string, error) {
 	if lines <= 0 {
 		lines = 200
 	}
-	cmd := exec.Command("docker", "logs", "--tail", strconv.Itoa(lines), containerName)
+	cmd := dockerCmd(nil, "logs", "--tail", strconv.Itoa(lines), containerName)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", err
@@ -892,12 +936,12 @@ func GetContainerLogs(containerName string, lines int) (string, error) {
 
 // StopContainer stops and removes a container.
 func StopContainer(containerName string) error {
-	cmd := exec.Command("docker", "rm", "-f", containerName)
+	cmd := dockerCmd(nil, "rm", "-f", containerName)
 	return cmd.Run()
 }
 
 // RestartContainer restarts a container.
 func RestartContainer(containerName string) error {
-	cmd := exec.Command("docker", "restart", containerName)
+	cmd := dockerCmd(nil, "restart", containerName)
 	return cmd.Run()
 }

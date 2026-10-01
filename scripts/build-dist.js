@@ -146,7 +146,6 @@ const FORBIDDEN_DIST_RAY_FILES = [
   "tsconfig.tsbuildinfo",
   "eslint.config.mjs",
   "postcss.config.mjs",
-  "prisma.config.ts",
   "proxy.ts",
   "package-lock.json",
 ];
@@ -431,6 +430,14 @@ async function main() {
     copyDirRecursive(sourcePrismaDir, destPrismaDir);
   }
 
+  // Ensure prisma.config.ts is staged for Prisma 7 CLI migrations and db push
+  const sourcePrismaConfig = path.join(RAY_DIR, "prisma.config.ts");
+  const destPrismaConfig = path.join(distRay, "prisma.config.ts");
+  if (fs.existsSync(sourcePrismaConfig)) {
+    fs.copyFileSync(sourcePrismaConfig, destPrismaConfig);
+    log("Staged prisma.config.ts into dist/ray/prisma.config.ts");
+  }
+
   // Stage init-db.sql into dist
   const initDbSqlPath = path.join(ROOT_DIR, "bin", "init-db.sql");
   if (fs.existsSync(initDbSqlPath)) {
@@ -557,6 +564,16 @@ async function main() {
 
   if (!fs.existsSync(path.join(distRay, ".next", "static"))) {
     error("POST-BUILD VALIDATION FAILED: dist/ray/.next/static does not exist!");
+    process.exit(1);
+  }
+
+  if (!fs.existsSync(path.join(distRay, "prisma.config.ts"))) {
+    error("POST-BUILD VALIDATION FAILED: dist/ray/prisma.config.ts does not exist!");
+    process.exit(1);
+  }
+
+  if (!fs.existsSync(path.join(distRay, "prisma", "schema.prisma"))) {
+    error("POST-BUILD VALIDATION FAILED: dist/ray/prisma/schema.prisma does not exist!");
     process.exit(1);
   }
 

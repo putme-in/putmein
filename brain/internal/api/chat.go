@@ -481,7 +481,7 @@ func injectMonitorContext(ctx context.Context, userInput string, reqProjects []m
 	// If a Docker container context or mention is present (or any follow-up questions like "fixed", "status", "issue"), fetch live container state
 	if strings.Contains(lowerInput, "container") || strings.Contains(lowerInput, "docker") || strings.Contains(lowerInput, "target container") ||
 		strings.Contains(lowerInput, "fixed") || strings.Contains(lowerInput, "issue") || strings.Contains(lowerInput, "work") {
-		if cOut, err := monitor.RunLogCommand(ctx, `docker ps -a --format "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null`); err == nil && strings.TrimSpace(cOut) != "" {
+		if cOut, err := monitor.RunLogCommand(ctx, `docker ps -a --format "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}"`); err == nil && strings.TrimSpace(cOut) != "" {
 			sb.WriteString("\n\n[DOCKER CONTAINERS RUNTIME STATE]\n")
 			for _, cLine := range strings.Split(strings.TrimSpace(cOut), "\n") {
 				cParts := strings.Split(cLine, "\t")

@@ -34,6 +34,14 @@ if (!userEnv.DATABASE_URL.includes("allowPublicKeyRetrieval")) {
   userEnv.DATABASE_URL += (userEnv.DATABASE_URL.includes("?") ? "&" : "?") + "allowPublicKeyRetrieval=true";
 }
 
+// Ensure valid Docker named pipe on Windows if unset or pointing to obsolete pipe
+if (process.platform === "win32") {
+  const activeDockerHost = (userEnv.DOCKER_HOST || process.env.DOCKER_HOST || "").trim();
+  if (!activeDockerHost || activeDockerHost.includes("dockerDesktopLinuxEngine")) {
+    userEnv.DOCKER_HOST = "npipe:////./pipe/docker_engine";
+  }
+}
+
 // Ensure JWT_SECRET is cryptographically secure and never undefined or using weak defaults
 const INSECURE_JWT_DEFAULTS = [
   "putmein-jwt-secret-default-key-2024",
@@ -104,12 +112,20 @@ if (fs.existsSync(brainScript) && !isWindows) {
 // Resolve paths for Ray Next.js standalone server
 const candidateRayPaths = [
   path.join(__dirname, "dist", "ray", "server.js"),
+  path.join(__dirname, "dist", "ray", "ray", "server.js"),
   path.join(__dirname, "ray", ".next", "standalone", "ray", "server.js"),
   path.join(__dirname, "ray", ".next", "standalone", "server.js"),
 ];
 
 const rayScript = candidateRayPaths.find((p) => fs.existsSync(p)) || candidateRayPaths[0];
 const rayCwd = path.dirname(rayScript);
+
+if (!fs.existsSync(rayScript)) {
+  console.error(
+    `\x1b[31m[ERROR]\x1b[0m PutmeIn Ray server entrypoint not found at:\n  ${rayScript}\n` +
+    `Please ensure the project has been built using: npm run build\n`
+  );
+}
 
 const rayPort = process.env.RAY_PORT || userEnv.RAY_PORT || "4567";
 const brainPort = process.env.BRAIN_PORT || userEnv.BRAIN_PORT || "4500";

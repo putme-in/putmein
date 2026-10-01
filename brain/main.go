@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +25,14 @@ import (
 func main() {
 	// Load .env from multiple paths (current dir, brain/.env, parent)
 	_ = godotenv.Load(".env", "brain/.env", "../brain/.env")
+
+	// Ensure cross-platform Docker host on Windows
+	if runtime.GOOS == "windows" {
+		dockerHost := os.Getenv("DOCKER_HOST")
+		if dockerHost == "" || strings.Contains(dockerHost, "dockerDesktopLinuxEngine") {
+			_ = os.Setenv("DOCKER_HOST", "npipe:////./pipe/docker_engine")
+		}
+	}
 
 	port := os.Getenv("BRAIN_PORT")
 	if port == "" {

@@ -46,11 +46,11 @@ async function main() {
 
   // 3. Attempt to stop and remove any ray-* docker containers if daemon is running
   try {
-    const { stdout } = await execAsync('docker ps -a --filter "name=ray-" --format "{{.ID}}" 2>/dev/null || true');
+    const { stdout } = await execAsync('docker ps -a --filter "name=ray-" --format "{{.ID}}"');
     const containerIds = stdout.trim().split("\n").filter(Boolean);
     if (containerIds.length > 0) {
       console.log(`Removing ${containerIds.length} Docker containers...`);
-      await execAsync(`docker rm -f ${containerIds.join(" ")} 2>/dev/null || true`);
+      await execAsync(`docker rm -f ${containerIds.join(" ")}`);
       console.log("Docker containers removed.");
     } else {
       console.log("No ray-* Docker containers found.");

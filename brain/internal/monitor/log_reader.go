@@ -103,11 +103,24 @@ func ReadFileTail(path string, lines int) (string, error) {
 	return strings.Join(allLines[len(allLines)-lines:], "\n"), nil
 }
 
+// NormalizeCommandForOS adjusts shell commands for cross-platform execution (e.g. Windows cmd vs Unix sh).
+func NormalizeCommandForOS(cmd string, targetOS string) string {
+	if targetOS == "windows" {
+		// On Windows cmd.exe, Unix redirection to /dev/null causes "The system cannot find the path specified."
+		// Translate /dev/null redirection to the Windows NUL device.
+		normalized := strings.ReplaceAll(cmd, "2>/dev/null", "2>nul")
+		normalized = strings.ReplaceAll(normalized, ">/dev/null", ">nul")
+		normalized = strings.ReplaceAll(normalized, "> /dev/null", "> nul")
+		return normalized
+	}
+	return cmd
+}
+
 // RunLogCommand runs a shell command and returns its output.
 func RunLogCommand(ctx context.Context, cmd string) (string, error) {
 	var c *exec.Cmd
 	if runtime.GOOS == "windows" {
-		c = exec.CommandContext(ctx, "cmd", "/C", cmd)
+		c = exec.CommandContext(ctx, "cmd", "/C", NormalizeCommandForOS(cmd, "windows"))
 	} else {
 		c = exec.CommandContext(ctx, "sh", "-c", cmd)
 	}

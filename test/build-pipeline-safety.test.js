@@ -49,3 +49,43 @@ test("scripts/build-dist.js enforces Go preflight check and exits on missing com
     "build-dist.js must provide an actionable error when Go is missing"
   );
 });
+
+test("ecosystem.config.js targets dist/ray/server.js as the primary entrypoint", () => {
+  const ecosystemCode = fs.readFileSync(path.join(ROOT_DIR, "ecosystem.config.js"), "utf-8");
+  assert.match(
+    ecosystemCode,
+    /path\.join\(__dirname,\s*["']dist["'],\s*["']ray["'],\s*["']server\.js["']\)/,
+    "ecosystem.config.js must target dist/ray/server.js as the primary server entrypoint"
+  );
+});
+
+test("scripts/build-dist.js stages server directly and validates absence of nested dist/ray/ray", () => {
+  const buildDistCode = fs.readFileSync(path.join(ROOT_DIR, "scripts", "build-dist.js"), "utf-8");
+  assert.match(
+    buildDistCode,
+    /dist\/ray\/server\.js does not exist!/,
+    "build-dist.js must validate dist/ray/server.js exists"
+  );
+  assert.match(
+    buildDistCode,
+    /Nested dist\/ray\/ray directory exists!/,
+    "build-dist.js must validate that nested dist/ray/ray directory is rejected"
+  );
+});
+
+test("scripts/build-dist.js stages prisma.config.ts and does not treat it as forbidden", () => {
+  const { FORBIDDEN_DIST_RAY_FILES } = require("../scripts/build-dist");
+  assert.equal(
+    FORBIDDEN_DIST_RAY_FILES.includes("prisma.config.ts"),
+    false,
+    "FORBIDDEN_DIST_RAY_FILES must not include prisma.config.ts"
+  );
+
+  const buildDistCode = fs.readFileSync(path.join(ROOT_DIR, "scripts", "build-dist.js"), "utf-8");
+  assert.match(
+    buildDistCode,
+    /dist\/ray\/prisma\.config\.ts does not exist!/,
+    "build-dist.js must validate dist/ray/prisma.config.ts exists post-build"
+  );
+});
+

@@ -320,9 +320,13 @@ export async function DELETE(
           fs.existsSync(path.join(project.projectPath, "compose.yaml"));
 
         if (hasCompose) {
-          await execAsync(
-            `cd "${project.projectPath}" && (docker compose down -v --remove-orphans 2>/dev/null || docker-compose down -v --remove-orphans 2>/dev/null || true)`
-          );
+          try {
+            await execAsync(`docker compose down -v --remove-orphans`, { cwd: project.projectPath });
+          } catch {
+            try {
+              await execAsync(`docker-compose down -v --remove-orphans`, { cwd: project.projectPath });
+            } catch { /* ignore compose errors */ }
+          }
         }
       } catch { /* ignore compose errors */ }
     }
@@ -330,7 +334,7 @@ export async function DELETE(
     // 2b. Discover any active or stopped containers associated with this project name
     try {
       const { stdout: psOut } = await execAsync(
-        `docker ps -a --format "{{.ID}}\t{{.Names}}\t{{.Image}}" 2>/dev/null || true`
+        `docker ps -a --format "{{.ID}}\t{{.Names}}\t{{.Image}}"`
       );
       if (psOut) {
         for (const line of psOut.split("\n")) {
@@ -358,7 +362,7 @@ export async function DELETE(
     // 2c. Force remove all discovered containers
     for (const cName of containerNamesToKill) {
       try {
-        await execAsync(`docker rm -f ${cName} 2>/dev/null || true`);
+        await execAsync(`docker rm -f ${cName}`);
       } catch { /* ignore */ }
       // Also notify Brain container action endpoint
       try {
@@ -374,18 +378,31 @@ export async function DELETE(
     // 2d. Force remove associated Docker images, volumes, and networks
     for (const img of imageNamesToKill) {
       try {
-        await execAsync(`docker rmi -f ${img} 2>/dev/null || true`);
+        await execAsync(`docker rmi -f ${img}`);
       } catch { /* ignore */ }
     }
 
     if (cleanBaseName) {
       try {
-        await execAsync(
-          `docker volume ls -q --filter name=${cleanBaseName} 2>/dev/null | xargs -r docker volume rm -f 2>/dev/null || true`
+        const { stdout: volOut } = await execAsync(
+          `docker volume ls -q --filter name=${cleanBaseName}`
         );
-        await execAsync(
-          `docker network ls -q --filter name=${cleanBaseName} 2>/dev/null | xargs -r docker network rm 2>/dev/null || true`
+        for (const vol of volOut.split("\n").map((v) => v.trim()).filter(Boolean)) {
+          try {
+            await execAsync(`docker volume rm -f ${vol}`);
+          } catch { /* ignore */ }
+        }
+      } catch { /* ignore */ }
+
+      try {
+        const { stdout: netOut } = await execAsync(
+          `docker network ls -q --filter name=${cleanBaseName}`
         );
+        for (const net of netOut.split("\n").map((n) => n.trim()).filter(Boolean)) {
+          try {
+            await execAsync(`docker network rm ${net}`);
+          } catch { /* ignore */ }
+        }
       } catch { /* ignore */ }
     }
 
