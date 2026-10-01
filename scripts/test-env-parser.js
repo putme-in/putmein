@@ -6,9 +6,10 @@ const { spawnSync } = require("child_process");
 
 const rootDir = path.resolve(__dirname, "..");
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "putmein-env-test-"));
+const tempDotenvDir = path.join(tempDir, "node_modules", "dotenv");
 
 try {
-  fs.mkdirSync(path.join(tempDir, "ray"));
+  fs.mkdirSync(path.join(tempDir, "ray"), { recursive: true });
   fs.copyFileSync(path.join(rootDir, "ecosystem.config.js"), path.join(tempDir, "ecosystem.config.js"));
   fs.writeFileSync(
     path.join(tempDir, "ray", ".env"),
@@ -23,11 +24,43 @@ try {
     ].join("\n"),
   );
 
+  // Provide dotenv dependency to the temporary test environment so Node resolves it across platforms
+  const rootDotenvDir = path.join(rootDir, "node_modules", "dotenv");
+  const tempNodeModules = path.join(tempDir, "node_modules");
+  fs.mkdirSync(tempNodeModules, { recursive: true });
+
+  if (fs.existsSync(rootDotenvDir)) {
+    try {
+      const symlinkType = process.platform === "win32" ? "junction" : "dir";
+      fs.symlinkSync(rootDotenvDir, tempDotenvDir, symlinkType);
+    } catch (_) {
+      fs.cpSync(rootDotenvDir, tempDotenvDir, { recursive: true });
+    }
+  }
+
   const child = spawnSync(
     process.execPath,
     [
       "-e",
-      `const config = require(${JSON.stringify(path.join(tempDir, "ecosystem.config.js"))});
+      `const Module = require("module");
+const originalResolveFilename = Module._resolveFilename;
+const rootNodeModules = ${JSON.stringify(path.join(rootDir, "node_modules"))};
+Module._resolveFilename = function(request, parent, isMain, options) {
+  try {
+    return originalResolveFilename.call(this, request, parent, isMain, options);
+  } catch (err) {
+    if (err && err.code === "MODULE_NOT_FOUND") {
+      try {
+        return originalResolveFilename.call(this, request, {
+          ...parent,
+          paths: ((parent && parent.paths) || []).concat([rootNodeModules])
+        }, isMain, options);
+      } catch (_) {}
+    }
+    throw err;
+  }
+};
+const config = require(${JSON.stringify(path.join(tempDir, "ecosystem.config.js"))});
 const env = config.apps[0].env;
 process.stdout.write(JSON.stringify({
   databaseUrl: env.DATABASE_URL,
@@ -39,7 +72,13 @@ process.stdout.write(JSON.stringify({
     ],
     {
       cwd: tempDir,
-      env: { ...process.env, NODE_PATH: path.join(rootDir, "node_modules") },
+      env: {
+        ...process.env,
+        NODE_PATH: [
+          path.join(rootDir, "node_modules"),
+          process.env.NODE_PATH || "",
+        ].filter(Boolean).join(path.delimiter),
+      },
       encoding: "utf8",
     },
   );
@@ -53,5 +92,14 @@ process.stdout.write(JSON.stringify({
   assert.strictEqual(result.ignoredSecret, undefined);
   console.log("Environment parser regression passed");
 } finally {
+  try {
+    if (fs.existsSync(tempDotenvDir)) {
+      const stat = fs.lstatSync(tempDotenvDir);
+      if (stat.isSymbolicLink()) {
+        fs.unlinkSync(tempDotenvDir);
+      }
+    }
+  } catch (_) {}
   fs.rmSync(tempDir, { recursive: true, force: true });
 }
+

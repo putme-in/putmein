@@ -22,6 +22,14 @@ test("deployments diagnose route resolves active model and fallback diagnosis fo
     content.includes("pipe/docker_engine"),
     "Expected fallback diagnosis to detect Windows named pipe errors"
   );
+  assert.ok(
+    content.includes("ejsonparse"),
+    "Expected fallback diagnosis to detect EJSONPARSE errors"
+  );
+  assert.ok(
+    content.includes("Package Manifest Syntax Error"),
+    "Expected fallback diagnosis to flag package.json syntax errors"
+  );
 
   // Verify detailed AI error extraction instead of unconditional swallow
   assert.ok(
@@ -31,6 +39,32 @@ test("deployments diagnose route resolves active model and fallback diagnosis fo
   assert.ok(
     content.includes("AI request failed:"),
     "Expected route to prefix and surface actual AI error"
+  );
+});
+
+test("brain prompt and monitor prioritize EJSONPARSE build errors over missing node_modules", () => {
+  const promptPath = path.join(__dirname, "..", "brain", "internal", "ai", "prompt.go");
+  const promptContent = fs.readFileSync(promptPath, "utf-8");
+
+  assert.ok(
+    promptContent.includes("EJSONPARSE"),
+    "Expected prompt.go to explicitly instruct the model on EJSONPARSE / manifest errors"
+  );
+  assert.ok(
+    promptContent.includes("NEVER guess missing node_modules or recommend 'npm install' when package.json contains a JSON syntax error"),
+    "Expected prompt.go to forbid false missing node_modules diagnoses on invalid package.json"
+  );
+
+  const diagnosePath = path.join(__dirname, "..", "brain", "internal", "monitor", "diagnose.go");
+  const diagnoseContent = fs.readFileSync(diagnosePath, "utf-8");
+
+  assert.ok(
+    diagnoseContent.includes("CRITICAL MANIFEST SYNTAX ERROR in package.json"),
+    "Expected diagnose.go to validate package.json syntax and add critical manifest warning"
+  );
+  assert.ok(
+    diagnoseContent.includes("strings.Contains(lowerLogs, \"ejsonparse\")"),
+    "Expected diagnose.go fallback to handle EJSONPARSE"
   );
 });
 

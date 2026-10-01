@@ -2,7 +2,31 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const crypto = require("crypto");
-const dotenv = require("dotenv");
+let dotenv;
+try {
+  dotenv = require("dotenv");
+} catch (_) {
+  // If dotenv cannot be resolved via standard lookup (e.g. executed from an isolated directory),
+  // attempt to locate it from candidate project roots or parent directories
+  const candidateRoots = [
+    __dirname,
+    path.join(__dirname, ".."),
+    process.cwd(),
+    path.join(process.cwd(), ".."),
+  ];
+  for (const root of candidateRoots) {
+    const candidate = path.join(root, "node_modules", "dotenv");
+    if (fs.existsSync(candidate)) {
+      try {
+        dotenv = require(candidate);
+        break;
+      } catch (__) {}
+    }
+  }
+  if (!dotenv) {
+    throw _;
+  }
+}
 
 // Load configuration from all possible env locations in priority order
 let userEnv = {};

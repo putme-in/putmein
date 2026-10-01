@@ -12,6 +12,29 @@ function fallbackDiagnosisFromLogs(logs: string) {
   if (!logs) return null;
   const lower = logs.toLowerCase();
 
+  // 0. Package Manifest Syntax Errors (EJSONPARSE / JSON.parse)
+  if (
+    lower.includes("ejsonparse") ||
+    lower.includes("expected ',' or '}'") ||
+    (lower.includes("json.parse") && (lower.includes("package.json") || lower.includes("expected"))) ||
+    (lower.includes("unexpected token") && lower.includes("package.json")) ||
+    (lower.includes("failed to parse") && lower.includes("package.json"))
+  ) {
+    return {
+      summary: "Package Manifest Syntax Error: package.json contains invalid JSON.",
+      rootCause:
+        "The build failed with an EJSONPARSE error because package.json contains invalid JSON syntax (such as a missing comma between properties, trailing comma, or misplaced syntax). Package managers cannot parse an invalid manifest, preventing dependencies from installing and halting the build.",
+      fixSteps: [
+        "Open package.json and locate the syntax error (check for missing commas between properties or trailing commas)",
+        "Validate package.json syntax using a JSON validator or 'node -e \"JSON.parse(require('fs').readFileSync('package.json'))\"'",
+        "Commit and push the valid package.json, then retry the deployment",
+      ],
+      commands: [],
+      startCommand: "npm install",
+      canAutoFix: false,
+    };
+  }
+
   // 1. Docker daemon & Named-Pipe Connectivity Errors (Windows / Linux / macOS)
   if (
     lower.includes("pipe/docker_engine") ||

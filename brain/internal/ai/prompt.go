@@ -309,10 +309,13 @@ You MUST respond with a valid, raw JSON object matching this schema exactly:
 }
 
 RULES:
-1. "commands" should contain ONLY safe, executable shell commands to fix the environment or build (e.g. "npm install", "npm run build", "pip install -r requirements.txt", etc.).
-2. "startCommand" is the recommended command to run after the fix (e.g. "npm run dev", "npm start", "docker build -t app .", etc.).
-3. "canAutoFix" should be true if the commands can automatically solve the problem without manual user code edits.
-4. Output ONLY the raw JSON object. Do not wrap in markdown code blocks or add introductory text.`, currentOS)
+1. PRIORITIZE THE FAILURE LOGS: Always identify the primary root cause from compiler errors, syntax errors, or error codes in the logs (e.g. EJSONPARSE, TS errors, Docker errors).
+2. NEVER guess missing node_modules or recommend 'npm install' when package.json contains a JSON syntax error or when logs show EJSONPARSE / invalid JSON. If package.json is invalid, report the JSON parse error as the root cause and advise fixing the syntax error in package.json.
+3. For Docker and container builds, dependencies are installed inside the container; do not diagnose a missing local node_modules directory on the host as the root cause of a Docker build failure.
+4. "commands" should contain ONLY safe, executable shell commands to fix the environment or build (e.g. "npm install", "npm run build", "pip install -r requirements.txt", etc.). If manual code or config editing is required (such as fixing JSON syntax in package.json), "commands" should be empty [] and "canAutoFix" MUST be false.
+5. "startCommand" is the recommended command to run after the fix (e.g. "npm run dev", "npm start", "docker build -t app .", etc.).
+6. "canAutoFix" should be true ONLY if the commands can automatically solve the problem without manual user code edits.
+7. Output ONLY the raw JSON object. Do not wrap in markdown code blocks or add introductory text.`, currentOS)
 
 	case PromptModeTitle:
 		return `You are a chat title generator. Generate a concise, clean, human-readable title (2 to 5 words, maximum 40 characters) summarizing the user's request.

@@ -102,6 +102,19 @@ PutmeIn exposes the `ray` command globally:
 
 ## Building From Source
 
+### Prerequisites
+- **Node.js**: `>=18.0.0` (v20 or v22 LTS recommended)
+- **npm**: `>=9.0.0`
+- **Go**: `>=1.21` (for building the Brain backend daemon)
+- **Docker**: (for container management and deployments)
+
+> **Note on npm 10.9+ / 11.x & Peer Dependencies:**
+> On npm 10.9+ and npm 11.x, npm's internal dependency resolver (`arborist`) can encounter an internal null reference error (`edgesOut`) when resolving transitive peer dependency trees in `ray/`.
+> The repository includes `.npmrc` files preconfigured with `legacy-peer-deps=true`. If you run manual installs or add packages in `ray/`, ensure you use:
+> ```bash
+> cd ray && npm install --legacy-peer-deps
+> ```
+
 ```bash
 # Clone the repository
 git clone https://github.com/putme-in/putmein.git
@@ -114,6 +127,7 @@ npm run build
 # Start services locally
 npm start
 ```
+
 
 ---
 

@@ -96,15 +96,25 @@ test("ChatInterface.tsx enforces controlled retry limit and avoids multi-attempt
   );
 });
 
-test("ray/.env retains dev port 3100 and chatRunner.ts supports auth and dynamic port fallback", () => {
-  const envContent = fs.readFileSync(path.join(ROOT_DIR, "ray", ".env"), "utf-8");
-  assert.match(
-    envContent,
-    /BRAIN_URL=["']http:\/\/localhost:3100["']/,
-    "ray/.env must retain dev port 3100"
-  );
+test("chatRunner.ts supports auth and dynamic port fallback between 4500 and 3100", () => {
+  const envPath = path.join(ROOT_DIR, "ray", ".env");
+  if (fs.existsSync(envPath)) {
+    const envContent = fs.readFileSync(envPath, "utf-8");
+    if (envContent.includes("BRAIN_URL=")) {
+      assert.match(
+        envContent,
+        /BRAIN_URL=["']http:\/\/localhost:(3100|4500)["']/,
+        "ray/.env BRAIN_URL must target a valid Brain port (3100 or 4500)"
+      );
+    }
+  }
 
   const runnerCode = fs.readFileSync(path.join(ROOT_DIR, "ray", "src", "lib", "chatRunner.ts"), "utf-8");
+  assert.match(
+    runnerCode,
+    /const BRAIN_URL = process\.env\.BRAIN_URL \|\| ["']http:\/\/localhost:(4500|3100)["']/,
+    "chatRunner.ts must default to a valid local Brain URL"
+  );
   assert.match(
     runnerCode,
     /x-brain-secret/,

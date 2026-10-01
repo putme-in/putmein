@@ -58,11 +58,17 @@ func DiagnoseProject(ctx context.Context, modelID, projectPath, command, failure
 		if info, err := os.Stat(filepath.Join(projectPath, "node_modules")); err == nil && info.IsDir() {
 			hasNodeModules = true
 		}
-		contextParts = append(contextParts, fmt.Sprintf("Has node_modules directory: %v", hasNodeModules))
+		if !strings.Contains(command, "docker") {
+			contextParts = append(contextParts, fmt.Sprintf("Has node_modules directory: %v", hasNodeModules))
+		}
 
 		// Check package.json
 		pkgPath := filepath.Join(projectPath, "package.json")
 		if data, err := os.ReadFile(pkgPath); err == nil {
+			var js interface{}
+			if jsonErr := json.Unmarshal(data, &js); jsonErr != nil {
+				contextParts = append(contextParts, fmt.Sprintf("CRITICAL MANIFEST SYNTAX ERROR in package.json: %v\n(package.json contains invalid JSON syntax which directly causes npm install/ci and Docker builds to fail with EJSONPARSE)", jsonErr))
+			}
 			contextParts = append(contextParts, fmt.Sprintf("package.json contents:\n%s", string(data)))
 		}
 
@@ -165,6 +171,48 @@ func DiagnoseProject(ctx context.Context, modelID, projectPath, command, failure
 func generateFallbackDiagnosis(projectPath, command, logs string, hasNodeModules bool) DiagnosisResult {
 	lowerLogs := strings.ToLower(logs)
 
+	// 0. Package Manifest Syntax Errors (EJSONPARSE / JSON.parse in package.json)
+	if strings.Contains(lowerLogs, "ejsonparse") ||
+		strings.Contains(lowerLogs, "expected ',' or '}'") ||
+		(strings.Contains(lowerLogs, "json.parse") && (strings.Contains(lowerLogs, "package.json") || strings.Contains(lowerLogs, "expected"))) ||
+		(strings.Contains(lowerLogs, "unexpected token") && strings.Contains(lowerLogs, "package.json")) ||
+		(strings.Contains(lowerLogs, "failed to parse") && strings.Contains(lowerLogs, "package.json")) {
+		return DiagnosisResult{
+			Summary:   "Package Manifest Syntax Error: package.json contains invalid JSON.",
+			RootCause: "The build failed with an EJSONPARSE error because package.json contains invalid JSON (such as a missing comma between properties, trailing comma, or misplaced syntax). Package managers and build scripts cannot parse an invalid manifest, preventing dependencies from installing and halting the build.",
+			FixSteps: []string{
+				"Open package.json and locate the syntax error (check for missing commas between properties or trailing commas)",
+				"Validate package.json syntax using a JSON validator or linter",
+				"Commit and push the valid package.json, then retry the deployment",
+			},
+			Commands:     []string{},
+			StartCommand: "npm install",
+			CanAutoFix:   false,
+		}
+	}
+
+	// Also check package.json directly on disk if projectPath exists
+	if projectPath != "" {
+		pkgPath := filepath.Join(projectPath, "package.json")
+		if data, err := os.ReadFile(pkgPath); err == nil {
+			var js interface{}
+			if jsonErr := json.Unmarshal(data, &js); jsonErr != nil {
+				return DiagnosisResult{
+					Summary:   "Package Manifest Syntax Error: package.json contains invalid JSON.",
+					RootCause: fmt.Sprintf("package.json contains invalid JSON syntax (%v). This causes 'npm install', 'npm ci', and container builds to fail with EJSONPARSE.", jsonErr),
+					FixSteps: []string{
+						"Open package.json and fix the syntax error (check for missing commas between properties or trailing commas)",
+						"Validate the file syntax with a JSON linter",
+						"Commit and push the valid package.json, then retry the deployment",
+					},
+					Commands:     []string{},
+					StartCommand: "npm install",
+					CanAutoFix:   false,
+				}
+			}
+		}
+	}
+
 	// 1. Docker daemon & Named-Pipe Connectivity Errors (Windows / Linux / macOS)
 	if strings.Contains(lowerLogs, "pipe/docker_engine") ||
 		strings.Contains(lowerLogs, "dockerdesktoplinuxengine") ||
@@ -224,9 +272,10 @@ func generateFallbackDiagnosis(projectPath, command, logs string, hasNodeModules
 		}
 	}
 
-	// 4. Missing Dependencies (only for local projects that actually have a project directory and aren't pure container deployments)
+	// 4. Missing Dependencies (only for local projects that actually have a project directory, aren't container builds, and where the logs explicitly report missing modules/commands)
 	isContainerCommand := strings.Contains(command, "docker")
-	if !isContainerCommand && projectPath != "" && (!hasNodeModules || strings.Contains(lowerLogs, "command not found") || strings.Contains(lowerLogs, "code 127") || strings.Contains(lowerLogs, "cannot find module")) {
+	hasExplicitMissingModule := strings.Contains(lowerLogs, "command not found") || strings.Contains(lowerLogs, "code 127") || strings.Contains(lowerLogs, "cannot find module") || strings.Contains(lowerLogs, "module_not_found")
+	if !isContainerCommand && projectPath != "" && hasExplicitMissingModule {
 		// Check package manager
 		installCmd := "npm install"
 		if _, err := os.Stat(filepath.Join(projectPath, "pnpm-lock.yaml")); err == nil {
@@ -263,13 +312,20 @@ func generateFallbackDiagnosis(projectPath, command, logs string, hasNodeModules
 		}
 	}
 
+	commands := []string{"npm install"}
+	canAutoFix := true
+	if isContainerCommand {
+		commands = []string{}
+		canAutoFix = false
+	}
+
 	return DiagnosisResult{
 		Summary:      "Startup script failed with error.",
 		RootCause:    "The project process exited unexpectedly with an error status.",
 		FixSteps:     []string{"Inspect project configuration and dependencies", "Retry running the project"},
-		Commands:     []string{"npm install"},
+		Commands:     commands,
 		StartCommand: startCmd,
-		CanAutoFix:   !isContainerCommand,
+		CanAutoFix:   canAutoFix,
 	}
 }
 
