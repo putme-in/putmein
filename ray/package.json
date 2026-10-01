@@ -23,7 +23,7 @@
     "@iconify/react": "^6.0.2",
     "@prisma/adapter-mariadb": "^7.10.0",
     "@prisma/client": "^7.10.0",
-    "@types/bcryptjs": "^2.4.6",
+    "@types/bcryptjs": "^3.0.0",
     "adm-zip": "^0.6.1",
     "ai": "^7.0.83",
     "bcryptjs": "^3.0.3",
