@@ -18,7 +18,7 @@
     "build:ray": "cd ray && npx --no-install prisma generate && npm run build",
     "build:brain": "node scripts/build-brain.js",
     "build:cohen": "cd cohen && go build -o bin/cohen .",
-    "test": "node --test test/**/*.test.js",
+    "test": "node --test 'test/*.test.js'",
     "start": "node bin/ray.js start",
     "stop": "node bin/ray.js stop",
     "restart": "node bin/ray.js restart",

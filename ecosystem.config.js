@@ -84,10 +84,16 @@ const candidateBrainPaths = [
   path.join(__dirname, "dist", "brain", `brain-${process.platform}-${normArch}${isWindows ? ".exe" : ""}`),
   path.join(__dirname, "dist", "brain", brainBinaryName),
   path.join(__dirname, "brain", "bin", brainBinaryName),
-  path.join(__dirname, "bin", brainBinaryName),
 ];
 
-const brainScript = candidateBrainPaths.find((p) => fs.existsSync(p)) || candidateBrainPaths[1];
+const brainScript = candidateBrainPaths.find((p) => fs.existsSync(p)) || candidateBrainPaths[0];
+
+if (!fs.existsSync(brainScript)) {
+  console.error(
+    `\x1b[31m[ERROR]\x1b[0m PutmeIn Brain binary not found at:\n  ${brainScript}\n` +
+    `Please ensure the project has been built using: npm run build\n`
+  );
+}
 
 if (fs.existsSync(brainScript) && !isWindows) {
   try {

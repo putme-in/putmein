@@ -4,6 +4,8 @@ ray/
 cohen/
 landing/
 scripts/
+bin/brain
+bin/brain.exe
 
 # Dev configs and agent directories
 .git/

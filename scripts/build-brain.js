@@ -30,15 +30,6 @@ if (!isWindows) {
       fs.chmodSync(path.join(binDir, "brain"), 0o755);
     } catch (_) {}
 
-    // Mirror to root bin/ if it exists (for PM2 runner compatibility)
-    const rootBin = path.join(ROOT_DIR, "bin");
-    if (fs.existsSync(rootBin)) {
-      fs.copyFileSync(path.join(binDir, "brain"), path.join(rootBin, "brain"));
-      try {
-        fs.chmodSync(path.join(rootBin, "brain"), 0o755);
-      } catch (_) {}
-    }
-
     console.log(`\x1b[32m[SUCCESS]\x1b[0m Brain successfully compiled -> brain/bin/brain`);
     process.exit(0);
   } catch (err) {
@@ -88,12 +79,6 @@ try {
     env: { ...process.env, CGO_ENABLED: "0" },
     stdio: "inherit",
   });
-
-  // Mirror to root bin/ if it exists (for PM2 runner compatibility)
-  const rootBinDir = path.join(ROOT_DIR, "bin");
-  if (fs.existsSync(rootBinDir)) {
-    fs.copyFileSync(outBinary, path.join(rootBinDir, "brain.exe"));
-  }
 
   console.log(`\x1b[32m[SUCCESS]\x1b[0m Brain successfully compiled -> brain/bin/brain.exe`);
 } catch (err) {

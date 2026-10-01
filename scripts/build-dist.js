@@ -68,6 +68,148 @@ function findFilesRecursive(dir, predicate, results = []) {
   return results;
 }
 
+function isEnvFile(name) {
+  const lower = name.toLowerCase();
+  return (
+    lower === ".env" ||
+    lower.startsWith(".env.") ||
+    lower.endsWith(".env") ||
+    lower.includes(".env.")
+  );
+}
+
+function makeWritableRecursive(targetPath) {
+  try {
+    const stat = fs.lstatSync(targetPath);
+    if (stat.isDirectory()) {
+      try {
+        fs.chmodSync(targetPath, 0o777);
+      } catch (_) {}
+      const entries = fs.readdirSync(targetPath);
+      for (const entry of entries) {
+        makeWritableRecursive(path.join(targetPath, entry));
+      }
+    } else {
+      try {
+        fs.chmodSync(targetPath, 0o666);
+      } catch (_) {}
+    }
+  } catch (_) {}
+}
+
+function safeRemoveSync(targetPath, isDirectory = false) {
+  if (!fs.existsSync(targetPath)) return;
+  try {
+    try {
+      fs.chmodSync(targetPath, isDirectory ? 0o777 : 0o666);
+    } catch (_) {}
+    fs.rmSync(targetPath, {
+      recursive: isDirectory,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 100,
+    });
+  } catch (err) {
+    if (isDirectory) {
+      makeWritableRecursive(targetPath);
+      fs.rmSync(targetPath, {
+        recursive: true,
+        force: true,
+        maxRetries: 3,
+        retryDelay: 100,
+      });
+      return;
+    }
+    try {
+      fs.chmodSync(targetPath, 0o666);
+    } catch (_) {}
+    fs.rmSync(targetPath, {
+      force: true,
+      maxRetries: 3,
+      retryDelay: 100,
+    });
+  }
+}
+
+const FORBIDDEN_DIST_RAY_FILES = [
+  ".env",
+  ".env.local",
+  ".env.production",
+  ".env.development",
+  ".env.test",
+  ".env.example",
+  "AGENTS.md",
+  "CLAUDE.md",
+  "GEMINI.md",
+  "README.md",
+  "tsconfig.json",
+  "tsconfig.tsbuildinfo",
+  "eslint.config.mjs",
+  "postcss.config.mjs",
+  "prisma.config.ts",
+  "proxy.ts",
+  "package-lock.json",
+];
+
+const FORBIDDEN_DIST_RAY_DIRS = [
+  "src",
+  "app",
+  "scripts",
+];
+
+function sanitizeDist(distDir, distRay, rootDir, logger = { log, error }) {
+  logger.log("Sanitizing dist: removing all .env files and raw source code...");
+
+  try {
+    // 1. Purge specific forbidden development & source files from dist/ray
+    for (const f of FORBIDDEN_DIST_RAY_FILES) {
+      const p = path.join(distRay, f);
+      if (fs.existsSync(p)) {
+        safeRemoveSync(p, false);
+      }
+    }
+
+    // 2. Purge forbidden source directories from dist/ray
+    for (const d of FORBIDDEN_DIST_RAY_DIRS) {
+      const p = path.join(distRay, d);
+      if (fs.existsSync(p)) {
+        safeRemoveSync(p, true);
+      }
+    }
+
+    // 3. Purge any stray .env files anywhere across dist/ using pure Node.js recursive traversal
+    const strayEnvFiles = findFilesRecursive(distDir, (name) => isEnvFile(name));
+    for (const ef of strayEnvFiles) {
+      const displayPath = rootDir ? path.relative(rootDir, ef) : ef;
+      logger.log(`Removing forbidden env file: ${displayPath}`);
+      safeRemoveSync(ef, false);
+    }
+
+    // 4. Strict Safety Assertion: Verify zero .env files exist anywhere in dist
+    const remainingEnvFiles = findFilesRecursive(distDir, (name) => isEnvFile(name));
+    if (remainingEnvFiles.length > 0) {
+      const msg =
+        "CRITICAL SECURITY ERROR: Environment files detected in dist directory after sanitization:\n" +
+        remainingEnvFiles.map((p) => ` - ${rootDir ? path.relative(rootDir, p) : p}`).join("\n");
+      logger.error(msg);
+      throw new Error(msg);
+    }
+
+    // 5. Strict Safety Assertion: Verify forbidden directories are completely gone
+    for (const d of FORBIDDEN_DIST_RAY_DIRS) {
+      const p = path.join(distRay, d);
+      if (fs.existsSync(p)) {
+        const msg = `CRITICAL SECURITY ERROR: Forbidden directory dist/ray/${d} was not sanitized!`;
+        logger.error(msg);
+        throw new Error(msg);
+      }
+    }
+  } catch (err) {
+    logger.error("CRITICAL SANITIZATION FAILED: " + (err.message || err));
+    throw err;
+  }
+}
+
 async function main() {
   log("Starting PutmeIn full distribution build...");
 
@@ -78,6 +220,26 @@ async function main() {
   }
   fs.mkdirSync(path.join(DIST_DIR, "brain"), { recursive: true });
   fs.mkdirSync(path.join(DIST_DIR, "ray"), { recursive: true });
+
+  // 1.5. Pre-flight check: Verify Go compiler presence
+  log("Checking for Go compiler...");
+  let goVersionOutput = null;
+  try {
+    goVersionOutput = execSync("go version", {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch (_) {
+    goVersionOutput = null;
+  }
+
+  if (!goVersionOutput) {
+    error("Go compiler ('go') was not found in system PATH.");
+    error("The PutmeIn backend daemon (Brain) is written in Go and must be compiled from source.");
+    error("Please install Go (1.21+ recommended) from https://go.dev/dl/ and ensure 'go' is in your PATH.");
+    process.exit(1);
+  }
+  success(`Found Go compiler: ${goVersionOutput}`);
 
   // 2. Build Brain Go Binary (Multi-Architecture Cross-Compilation)
   log("Compiling Brain Go binaries for multi-platform support (Linux x64, Linux ARM64, Darwin x64/ARM64, Windows)...");
@@ -101,6 +263,7 @@ async function main() {
       success(`Brain compiled for ${target.os}/${target.arch} -> dist/brain/${target.name}`);
     } catch (err) {
       error(`Brain build failed for ${target.os}/${target.arch}: ${err.message}`);
+      process.exit(1);
     }
   }
 
@@ -114,7 +277,11 @@ async function main() {
       stdio: "inherit",
     });
     fs.chmodSync(brainOutPath, 0o755);
-  } catch (_) {}
+    success(`Brain compiled for host native -> dist/brain/${brainBinaryName}`);
+  } catch (err) {
+    error(`Brain host build failed: ${err.message}`);
+    process.exit(1);
+  }
 
   // 3. Build Cohen Go Binary (if cohen directory exists)
   if (fs.existsSync(COHEN_DIR)) {
@@ -363,55 +530,10 @@ async function main() {
   }
 
   // 6. Security & Cleanliness Sanitization: Purge ALL secrets, .env files, and raw source code from dist/
-  log("Sanitizing dist: removing all .env files and raw source code...");
-  const forbiddenFiles = [
-    ".env",
-    ".env.local",
-    ".env.production",
-    ".env.development",
-    "AGENTS.md",
-    "CLAUDE.md",
-    "README.md",
-    "tsconfig.json",
-    "tsconfig.tsbuildinfo",
-    "eslint.config.mjs",
-    "postcss.config.mjs",
-    "prisma.config.ts",
-    "proxy.ts",
-    "package-lock.json",
-  ];
-
-  const forbiddenDirs = [
-    "src",
-    "app",
-    "scripts",
-  ];
-
-  for (const f of forbiddenFiles) {
-    const p = path.join(distRay, f);
-    if (fs.existsSync(p)) {
-      fs.rmSync(p, { force: true });
-    }
-  }
-
-  for (const d of forbiddenDirs) {
-    const p = path.join(distRay, d);
-    if (fs.existsSync(p)) {
-      fs.rmSync(p, { recursive: true, force: true });
-    }
-  }
-
-  // Purge any stray .env files anywhere across dist/
-  const strayEnvFiles = findFilesRecursive(DIST_DIR, (name) => name.startsWith(".env"));
-  for (const ef of strayEnvFiles) {
-    log(`Removing forbidden env file: ${path.relative(ROOT_DIR, ef)}`);
-    fs.rmSync(ef, { force: true });
-  }
-
-  // Safety Assertion: ensure zero .env files anywhere in dist (cross-platform)
-  const remainingEnvFiles = findFilesRecursive(DIST_DIR, (name) => name.startsWith(".env"));
-  if (remainingEnvFiles.length > 0) {
-    error("CRITICAL SECURITY ERROR: .env files found in dist directory:\n" + remainingEnvFiles.join("\n"));
+  try {
+    sanitizeDist(DIST_DIR, distRay, ROOT_DIR, { log, error });
+  } catch (err) {
+    error("Build halted: Environment file sanitization failed! " + (err.message || err));
     process.exit(1);
   }
 
@@ -419,6 +541,12 @@ async function main() {
   log("Validating production distribution integrity...");
   if (!fs.existsSync(distServerJs)) {
     error("POST-BUILD VALIDATION FAILED: dist/ray/server.js does not exist!");
+    process.exit(1);
+  }
+
+  const hostBrainBinary = path.join(DIST_DIR, "brain", brainBinaryName);
+  if (!fs.existsSync(hostBrainBinary) || fs.statSync(hostBrainBinary).size === 0) {
+    error(`POST-BUILD VALIDATION FAILED: Host Brain binary ${brainBinaryName} does not exist in dist/brain/ or is empty!`);
     process.exit(1);
   }
 
@@ -448,7 +576,19 @@ async function main() {
   success("Full PutmeIn distribution build completed successfully!");
 }
 
-main().catch((err) => {
-  error("Build pipeline encountered an unexpected error: " + err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    error("Build pipeline encountered an unexpected error: " + err);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  isEnvFile,
+  safeRemoveSync,
+  makeWritableRecursive,
+  findFilesRecursive,
+  sanitizeDist,
+  FORBIDDEN_DIST_RAY_FILES,
+  FORBIDDEN_DIST_RAY_DIRS,
+};

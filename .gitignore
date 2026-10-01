@@ -22,6 +22,8 @@
 dist/
 brain/bin/
 cohen/bin/
+/bin/brain
+/bin/brain.exe
 
 # misc
 .DS_Store

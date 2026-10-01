@@ -54,10 +54,10 @@ jobs:
         with:
           node-version: 20
           cache: 'npm'
-          cache-dependency-path: ray/package-lock.json
+          cache-dependency-path: ray/package.json
 
       - name: Install dependencies
-        run: npm ci
+        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
       - name: Generate Prisma Client
         run: npx prisma generate
@@ -124,10 +124,10 @@ jobs:
         with:
           node-version: 22
           cache: 'npm'
-          cache-dependency-path: landing/package-lock.json
+          cache-dependency-path: landing/package.json
 
       - name: Install dependencies
-        run: npm ci
+        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
       - name: Typecheck
         run: npx tsc --noEmit
