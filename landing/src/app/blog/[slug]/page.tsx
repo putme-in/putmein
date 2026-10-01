@@ -142,7 +142,7 @@ export default async function BlogPostPage({ params }: Props) {
 
   // Extract tags from metaKeywords
   const tags = post.metaKeywords
-    ? post.metaKeywords.split(',').map((t) => t.trim()).filter(Boolean)
+    ? post.metaKeywords.split(',').map((t: string) => t.trim()).filter(Boolean)
     : [];
 
   return (
@@ -196,7 +196,7 @@ export default async function BlogPostPage({ params }: Props) {
               <>
                 <span className="w-1 h-1 rounded-full bg-zinc-700" />
                 <div className="flex flex-wrap gap-2">
-                  {tags.slice(0, 3).map((tag) => (
+                  {tags.slice(0, 3).map((tag: string) => (
                     <span
                       key={tag}
                       className="px-2.5 py-0.5 text-xs font-medium rounded-full border border-pink-500/20 bg-pink-500/5 text-pink-400"
@@ -262,7 +262,7 @@ export default async function BlogPostPage({ params }: Props) {
           <div className="px-6 md:px-16 max-w-3xl mx-auto mt-12 pt-8 border-t border-white/10">
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-sm text-zinc-500 font-medium">Tags:</span>
-              {tags.map((tag) => (
+              {tags.map((tag: string) => (
                 <span
                   key={tag}
                   className="px-3 py-1 text-xs font-medium rounded-full border border-white/10 bg-zinc-900/50 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-all"
