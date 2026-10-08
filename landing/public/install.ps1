@@ -136,8 +136,8 @@ $needNode = $false
 if ($hasNode) {
     $nodeVer = (node -v).TrimStart("v")
     $major = [int]($nodeVer.Split(".")[0])
-    if ($major -lt 18) {
-        Write-WarnMsg "Node.js version ($nodeVer) is too old. Requires >= 18."
+    if ($major -lt 20) {
+        Write-WarnMsg "Node.js version ($nodeVer) is too old. Requires >= 20."
         $needNode = $true
     } else {
         Write-Success "Node.js v$nodeVer is ready."

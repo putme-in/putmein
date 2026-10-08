@@ -1,6 +1,6 @@
 {
   "name": "putmein",
-  "version": "1.0.4",
+  "version": "1.0.51",
   "description": "Autonomous DevOps & Infrastructure Orchestrator powered by Ray and Brain",
   "main": "bin/ray.js",
   "bin": {
@@ -44,7 +44,7 @@
   "author": "Putme.in",
   "license": "MIT",
   "engines": {
-    "node": ">=18.0.0",
+    "node": ">=20.0.0",
     "npm": ">=9.0.0"
   }
 }

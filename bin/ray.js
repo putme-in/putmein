@@ -108,7 +108,23 @@ function printBanner(rayPort = 4567, brainPort = 4500) {
   console.log(`${C.bold}${C.cyan}╰${border}╯${C.reset}\n`);
 }
 
+function validateNodeVersion() {
+  const major = parseInt(process.versions.node.split(".")[0], 10);
+  if (major < 20) {
+    console.error(
+      `\n${C.red}${C.bold}[ERROR] Incompatible Node.js version (${process.version})${C.reset}\n` +
+      `PutmeIn requires ${C.yellow}Node.js >= 20.0.0${C.reset} (Next.js 16 & MariaDB connector requirement).\n` +
+      `Running on Node.js ${process.version} causes MariaDB and Next.js services to crash.\n\n` +
+      `Please upgrade Node.js on this machine:\n` +
+      `  • NVM:           ${C.cyan}nvm install 20 && nvm use 20 && nvm alias default 20${C.reset}\n` +
+      `  • Ubuntu/Debian: ${C.cyan}curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - && sudo apt-get install -y nodejs${C.reset}\n`
+    );
+    process.exit(1);
+  }
+}
+
 function handleStart() {
+  validateNodeVersion();
   const pm2 = getPm2Command();
   if (!pm2) {
     console.error(`${C.red}[ERROR]${C.reset} PM2 is required to run PutmeIn as a daemon.`);
@@ -152,6 +168,7 @@ function handleStop() {
 }
 
 function handleRestart() {
+  validateNodeVersion();
   const pm2 = getPm2Command();
   if (!pm2) return;
   console.log(`${C.cyan}➜ Restarting PutmeIn services...${C.reset}`);

@@ -284,10 +284,10 @@ install_node_linux() {
 HAS_NODE=false
 if command -v node &>/dev/null; then
   NODE_MAJOR=$(node -v 2>/dev/null | cut -d'.' -f1 | tr -d 'v')
-  if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -ge 18 ]; then
+  if [ -n "$NODE_MAJOR" ] && [ "$NODE_MAJOR" -ge 20 ]; then
     HAS_NODE=true
   else
-    warn "Node.js is installed but version ($NODE_MAJOR) is too old (requires >= 18)."
+    warn "Node.js is installed but version ($NODE_MAJOR) is too old (requires >= 20)."
   fi
 fi
 
@@ -328,7 +328,7 @@ if command -v node &>/dev/null && command -v npm &>/dev/null; then
   success "Node.js $(node -v) is available"
   success "npm v$(npm -v) is available"
 else
-  error "Node.js (>= 18) and npm are required. Please install them and re-run this script."
+  error "Node.js (>= 20) and npm are required. Please install them and re-run this script."
   exit 1
 fi
 

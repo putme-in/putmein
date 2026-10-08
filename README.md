@@ -103,7 +103,7 @@ PutmeIn exposes the `ray` command globally:
 ## Building From Source
 
 ### Prerequisites
-- **Node.js**: `>=18.0.0` (v20 or v22 LTS recommended)
+- **Node.js**: `>=20.0.0` (v20 or v22 LTS recommended)
 - **npm**: `>=9.0.0`
 - **Go**: `>=1.21` (for building the Brain backend daemon)
 - **Docker**: (for container management and deployments)

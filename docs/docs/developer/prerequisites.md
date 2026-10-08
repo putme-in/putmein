@@ -34,7 +34,7 @@ PutmeIn actively supports **macOS** (Apple Silicon and Intel), **Linux** (Debian
 The monorepo contains multiple JavaScript/TypeScript packages (`ray`, `landing`, `docs`, and root scripts):
 
 * **Recommended Version:** **Node 22 LTS** (`>= 20.0.0`).
-* While the repository root allows `>= 18.0.0`, the `docs` package specifies `>= 20.0.0` and the `landing` package is aligned with Node `22.20.0` (with `.nvmrc` set to `22`).
+* All packages across the repository require Node.js `>= 20.0.0` (mandated by Next.js 16 and `@prisma/adapter-mariadb`). The `landing` package is aligned with Node `22.20.0` (with `.nvmrc` set to `22`).
 * To ensure seamless compilation across every package without engine mismatch warnings, installing **Node 20 or Node 22** is strongly recommended.
 * Verify your installed version:
   ```bash

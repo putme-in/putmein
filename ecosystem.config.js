@@ -28,6 +28,16 @@ try {
   }
 }
 
+// Validate Node.js runtime version
+const nodeMajor = parseInt(process.versions.node.split(".")[0], 10);
+if (nodeMajor < 20) {
+  console.error(
+    `\x1b[31m[ERROR]\x1b[0m Incompatible Node.js runtime (${process.version}).\n` +
+    `PutmeIn requires Node.js >= 20.0.0 (Next.js 16 & MariaDB driver requirement).\n` +
+    `Please upgrade Node.js on this system before launching daemon services.\n`
+  );
+}
+
 // Load configuration from all possible env locations in priority order
 let userEnv = {};
 
