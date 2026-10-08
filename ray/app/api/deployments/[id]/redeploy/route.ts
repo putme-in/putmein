@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyToken } from "@/lib/auth";
+import { parseDeploymentEnvironment } from "@/lib/deployment-runtime";
+import { readProjectSetup, validateSetupSource, deploymentSetupPayload } from "@/lib/project-setup-store";
+import { hostRuntimeHandle, requireStoppedRuntime } from "@/lib/host-runtime";
 import prisma from "@/lib/prisma";
 
 const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 export const runtime = "nodejs";
-export const maxDuration = 180;
+export const maxDuration = 900;
 
 // POST /api/deployments/[id]/redeploy — trigger rebuild and pipe live SSE progress
 export async function POST(
@@ -40,21 +43,23 @@ export async function POST(
       return new Response(JSON.stringify({ error: "Deployment not found" }), { status: 404 });
     }
 
+    const saved = deployment.projectId ? await readProjectSetup(user.userId, deployment.projectId) : null;
+    let setup;
+    try { setup = saved ? validateSetupSource(saved) : null; if (setup) { deploymentSetupPayload(setup); requireStoppedRuntime(deployment, setup.dockerEnabled); } }
+    catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid setup" }, { status: 400 }); }
+    const envs = setup?.envVars ?? parseDeploymentEnvironment(deployment.envVars);
+
     // Reset status to building
     const initialLog = `[REDEPLOY] Initiating container rebuild for ${deployment.name}...\n`;
     await prisma.rayDeployment.update({
       where: { id: deployment.id },
       data: {
         status: "building",
+        ...(setup && !setup.dockerEnabled && deployment.projectId ? { containerName: hostRuntimeHandle(user.userId, deployment.projectId), containerId: null, imageName: null, containerPort: null } : {}),
         buildLogs: initialLog,
         updatedAt: new Date(),
       },
     });
-
-    let envs: Record<string, string> | undefined;
-    if (deployment.envVars) {
-      try { envs = JSON.parse(deployment.envVars); } catch { /* ignore */ }
-    }
 
     // Proxy request to Brain /v1/deploy
     const brainRes = await fetch(`${BRAIN_URL}/v1/deploy`, {
@@ -62,14 +67,18 @@ export async function POST(
       headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
       body: JSON.stringify({
         id: deployment.id,
+        projectId: deployment.projectId,
+        previousRuntime: deployment.containerName,
         userId: user.userId,
         name: deployment.name,
-        projectPath: deployment.projectPath,
-        sourceType: deployment.sourceType,
-        repoUrl: deployment.repoUrl,
+        projectPath: setup?.projectPath || deployment.projectPath,
+        sourceType: "local", // Rebuild the saved snapshot; CI/CD fetches new source.
+        repoUrl: undefined,
         branch: deployment.branch,
         envVars: envs,
+        containerPort: deployment.containerPort || undefined,
         hostPort: deployment.hostPort || undefined,
+        ...(setup ? deploymentSetupPayload(setup) : {}),
       }),
     });
 
@@ -85,15 +94,20 @@ export async function POST(
     let accumulatedLogs = initialLog;
     const depId = deployment.id;
 
+    const decoder = new TextDecoder();
+    let eventBuffer = "";
+    let runtimeRestored = false;
     const transformStream = new TransformStream({
       async transform(chunk, controller) {
         controller.enqueue(chunk);
-        const text = new TextDecoder().decode(chunk);
-        const lines = text.split("\n");
+        eventBuffer += decoder.decode(chunk, { stream: true });
+        const lines = eventBuffer.split("\n");
+        eventBuffer = lines.pop() || "";
         for (const line of lines) {
           if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6));
+              if (data.step === "rollback" && data.runtimeRestored && data.activeDeploymentId === depId) runtimeRestored = true;
               if (data.logDelta) {
                 accumulatedLogs += data.logDelta;
               } else if (data.message) {
@@ -105,18 +119,27 @@ export async function POST(
                   where: { id: depId },
                   data: {
                     status: "healthy",
+                        ...(data.runtime === "host" ? { containerId: null, imageName: null, containerPort: null } : {}),
+                    ...(setup ? { projectPath: data.projectPath || setup.projectPath, envVars: JSON.stringify(setup.envVars) } : {}),
                     deployUrl: data.url,
                     hostPort: data.port,
+                    ...(data.containerPort ? { containerPort: data.containerPort } : {}),
                     containerName: data.container,
                     buildLogs: accumulatedLogs,
                     updatedAt: new Date(),
                   },
                 });
+                if (setup && deployment.projectId) {
+                  await prisma.rayMonitorProject.update({ where: { id: deployment.projectId }, data: {
+                    projectPath: data.projectPath || setup.projectPath, projectUrl: setup.projectUrl || data.url,
+                    runCommand: setup.startCommand || null,
+                  } });
+                }
               } else if (data.step === "failed" || data.status === "error") {
                 await prisma.rayDeployment.update({
                   where: { id: depId },
                   data: {
-                    status: "failed",
+                    status: runtimeRestored ? "healthy" : "failed",
                     buildLogs: accumulatedLogs || data.message || "Redeployment failed.",
                     updatedAt: new Date(),
                   },
@@ -130,21 +153,10 @@ export async function POST(
         try {
           const current = await prisma.rayDeployment.findUnique({ where: { id: depId } });
           if (current && current.status === "building") {
-            if (accumulatedLogs.includes("successfully deployed") || accumulatedLogs.includes("healthy")) {
-              await prisma.rayDeployment.update({
-                where: { id: depId },
-                data: { status: "healthy", buildLogs: accumulatedLogs, updatedAt: new Date() },
-              });
-            } else {
-              await prisma.rayDeployment.update({
-                where: { id: depId },
-                data: {
-                  status: "failed",
-                  buildLogs: accumulatedLogs + "\n[Ray] Redeployment stream completed or disconnected.",
-                  updatedAt: new Date(),
-                },
-              });
-            }
+            await prisma.rayDeployment.update({
+              where: { id: depId },
+              data: { status: "failed", buildLogs: accumulatedLogs + "\n[Ray] Redeployment stream ended before completion.", updatedAt: new Date() },
+            });
           }
         } catch { /* silent */ }
       },

@@ -2,34 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyToken } from "@/lib/auth";
 import fs from "fs";
+import { randomUUID } from "crypto";
 import path from "path";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
 import AdmZip from "adm-zip";
 
+import { getMaxUploadSizeBytes, getMaxUploadRequestBytes } from "@/lib/upload-config";
 import { getDeploymentsDir } from "@/lib/settings";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
-
-/**
- * Returns the maximum allowed upload size in bytes.
- * Configurable via MAX_UPLOAD_SIZE_MB (defaults to 500 MB).
- */
-function getMaxUploadSizeBytes(): number {
-  const envMb = process.env.MAX_UPLOAD_SIZE_MB;
-  if (envMb) {
-    const parsed = parseInt(envMb, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      return parsed * 1024 * 1024;
-    }
-  }
-  return 500 * 1024 * 1024; // 500 MB default
-}
-
-function getMaxUploadSizeMb(): number {
-  return Math.round(getMaxUploadSizeBytes() / (1024 * 1024));
-}
+export const maxDuration = 300;
 
 /**
  * Validates that a project name contains no path traversal sequences or directory separators.
@@ -78,13 +61,13 @@ export async function POST(req: NextRequest) {
   }
 
   const maxSizeBytes = getMaxUploadSizeBytes();
-  const maxMb = getMaxUploadSizeMb();
+  const maxMb = Math.round(maxSizeBytes / (1024 * 1024));
 
   // Early Content-Length check to reject oversized uploads before parsing body
   const contentLengthHeader = req.headers.get("content-length");
   if (contentLengthHeader) {
     const contentLength = parseInt(contentLengthHeader, 10);
-    if (!isNaN(contentLength) && contentLength > maxSizeBytes) {
+    if (!isNaN(contentLength) && contentLength > getMaxUploadRequestBytes()) {
       return NextResponse.json(
         { error: `Payload Too Large: Upload of ${(contentLength / (1024 * 1024)).toFixed(1)}MB exceeds maximum allowed limit of ${maxMb}MB.` },
         { status: 413 }
@@ -93,10 +76,30 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const formData = await req.formData();
+    let formData: FormData;
+    try {
+      formData = await req.formData();
+    } catch {
+      return NextResponse.json(
+        { error: "Upload was interrupted or the multipart body was incomplete. Retry the upload; check proxy upload limits if this repeats." },
+        { status: 400 }
+      );
+    }
     const files = formData.getAll("files") as File[];
     const zipFile = formData.get("zip") as File | null;
     let customName = formData.get("name") as string | null;
+    let filePaths: string[] | undefined;
+    const filePathsField = formData.get("filePaths");
+    if (filePathsField !== null) {
+      try {
+        const parsed: unknown = JSON.parse(String(filePathsField));
+        if (!Array.isArray(parsed) || parsed.length !== files.length ||
+            !parsed.every(value => typeof value === "string" && isSafeRelativePath(value))) throw new Error();
+        filePaths = parsed;
+      } catch {
+        return NextResponse.json({ error: "Invalid folder file paths." }, { status: 400 });
+      }
+    }
 
     if (!files?.length && !zipFile) {
       return NextResponse.json({ error: "No files uploaded" }, { status: 400 });
@@ -140,7 +143,7 @@ export async function POST(req: NextRequest) {
       const sanitizedZipName = rawBase.replace(/[^a-zA-Z0-9._-]/g, "_") || `app-${Date.now()}`;
       projectName = customName || (isValidProjectName(sanitizedZipName) ? sanitizedZipName : `app-${Date.now()}`);
 
-      const resolvedTargetDir = path.resolve(resolvedBaseDeployDir, projectName);
+      const resolvedTargetDir = path.resolve(resolvedBaseDeployDir, `.upload-${randomUUID()}`, projectName);
       if (
         resolvedTargetDir === resolvedBaseDeployDir ||
         !resolvedTargetDir.startsWith(resolvedBaseDeployDir + path.sep)
@@ -177,8 +180,14 @@ export async function POST(req: NextRequest) {
           );
         }
 
+        // Reject oversized expanded archives before extracting any content.
+        let expandedBytes = 0;
         // Pass 1: Strict validation of EVERY entry before modifying disk
         for (const entry of entries) {
+          expandedBytes += entry.header.size;
+          if (expandedBytes > maxSizeBytes) {
+            return NextResponse.json({ error: `Expanded archive exceeds the ${maxMb} MB limit.` }, { status: 413 });
+          }
           const rawEntryName = entry.entryName;
           const normalized = rawEntryName.replace(/\\/g, "/");
           const trimmedEntry = normalized.endsWith("/") ? normalized.slice(0, -1) : normalized;
@@ -203,10 +212,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // Safe to prepare destination directory
-        if (fs.existsSync(resolvedTargetDir)) {
-          fs.rmSync(resolvedTargetDir, { recursive: true, force: true });
-        }
+        // Every upload gets a fresh source tree; never remove a live project directory.
         fs.mkdirSync(resolvedTargetDir, { recursive: true });
 
         // Pass 2: Extract verified entries
@@ -270,7 +276,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const resolvedTargetDir = path.resolve(resolvedBaseDeployDir, projectName);
+    const resolvedTargetDir = path.resolve(resolvedBaseDeployDir, `.upload-${randomUUID()}`, projectName);
     if (
       resolvedTargetDir === resolvedBaseDeployDir ||
       !resolvedTargetDir.startsWith(resolvedBaseDeployDir + path.sep)
@@ -285,8 +291,8 @@ export async function POST(req: NextRequest) {
       fs.mkdirSync(resolvedTargetDir, { recursive: true });
     }
 
-    for (const file of files) {
-      const relPath = (file as unknown as { webkitRelativePath?: string }).webkitRelativePath || file.name;
+    for (const [fileIndex, file] of files.entries()) {
+      const relPath = filePaths?.[fileIndex] || (file as unknown as { webkitRelativePath?: string }).webkitRelativePath || file.name;
       const normalizedRel = (relPath || "").replace(/\\/g, "/");
       // strip top directory if present
       const cleanRel = normalizedRel.includes("/") ? normalizedRel.split("/").slice(1).join("/") : normalizedRel;

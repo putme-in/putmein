@@ -4,12 +4,12 @@
  * Avoids redirect loops to authentication routes.
  *
  * @param rawTarget The untrusted destination string from query parameter 'from'.
- * @param fallbackPath The default path to use if rawTarget is missing or unsafe. Defaults to "/chat".
+ * @param fallbackPath The default path to use if rawTarget is missing or unsafe. Defaults to "/dashboard".
  * @returns A safe relative path string.
  */
 export function getSafeRedirectUrl(
   rawTarget?: string | null,
-  fallbackPath: string = "/chat"
+  fallbackPath: string = "/dashboard"
 ): string {
   if (!rawTarget || typeof rawTarget !== "string") {
     return fallbackPath;

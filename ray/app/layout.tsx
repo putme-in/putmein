@@ -29,7 +29,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${inter.variable} ${jersey25.variable}`}>
-      <body className="min-h-screen bg-black text-white font-sans antialiased">
+      <body suppressHydrationWarning className="min-h-screen bg-black text-white font-sans antialiased">
         {children}
       </body>
     </html>

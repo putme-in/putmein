@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
     // Helper to extract clean failure headline from buildLogs if failed
     const extractFailureReason = (logs?: string | null): string => {
-      if (!logs) return "Build or container execution halted.";
+      if (!logs) return "Build or application execution halted.";
       const lines = logs.trim().split("\n").filter(Boolean);
       for (let i = lines.length - 1; i >= 0; i--) {
         const l = lines[i].trim();
@@ -132,10 +132,10 @@ export async function GET(req: NextRequest) {
           status: "building",
           deployUrl: activeDep.deployUrl,
           port: activeDep.hostPort,
-          currentStage: "Docker Build & Container Deploy",
+          currentStage: activeDep.containerName?.startsWith("process:") ? "Host Build & Process Start" : "Docker Build & Container Deploy",
           stageIndex: 4,
           totalStages: 6,
-          buildLogs: activeDep.buildLogs || "Building container...",
+          buildLogs: activeDep.buildLogs || "Building application...",
           updatedAt: activeDep.updatedAt.getTime(),
         },
       });

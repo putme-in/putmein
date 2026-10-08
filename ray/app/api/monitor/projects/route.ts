@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     try {
       const brainRes = await fetch(`${BRAIN_URL}/v1/monitor/projects`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
         body: JSON.stringify({ userId: user.userId, name, projectPath, logCommand, intervalSec }),
         signal: AbortSignal.timeout(15000),
       });

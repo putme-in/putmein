@@ -17,12 +17,19 @@ import (
 	"brain/server/internal/agent"
 	"brain/server/internal/ai"
 	"brain/server/internal/api"
+	"brain/server/internal/deploy"
+	"brain/server/internal/hostlogs"
 	"brain/server/internal/monitor"
 
 	"github.com/joho/godotenv"
 )
 
 func main() {
+	// This child mode must not load application .env files or start platform services.
+	if len(os.Args) == 5 && os.Args[1] == "--internal-host-log-runner" {
+		os.Exit(hostlogs.Run(os.Args[3], os.Args[4]))
+	}
+
 	// Load .env from multiple paths (current dir, brain/.env, parent)
 	_ = godotenv.Load(".env", "brain/.env", "../brain/.env")
 
@@ -64,10 +71,14 @@ func main() {
 		log.Fatal("[FATAL] BRAIN_INTERNAL_SECRET is not set. Please define BRAIN_INTERNAL_SECRET in your .env file.")
 	}
 
-	// Start the monitor service (in-memory; Ray Next.js owns DB persistence)
+	outbox, err := monitor.NewAlertOutbox(monitor.NewAlertPersister(rayURL, internalSecret, nil))
+	if err != nil {
+		log.Fatalf("[FATAL] Cannot initialize alert outbox: %v", err)
+	}
+	// Save detected alerts locally before asynchronous delivery to Ray.
 	svc := monitor.NewService(
 		monitorModel,
-		nil, // persistAlert: handled by Ray API
+		outbox.Enqueue,
 		// persistProject: called by Brain after each poll cycle to sync status/lastChecked
 		func(id string, status monitor.ProjectStatus, lastChecked time.Time) error {
 			url := rayURL + "/api/monitor/internal/update-project"
@@ -115,7 +126,11 @@ func main() {
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
+	go outbox.Run(ctx)
 	svc.Start(ctx)
+	go deploy.RecoverHostRuntimes()
+	deploy.StartReleaseMaintenance(ctx)
+	deploy.StartSecurityRescans(ctx)
 
 	// Build the HTTP router
 	router := api.NewRouter()

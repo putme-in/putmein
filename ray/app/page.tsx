@@ -12,7 +12,7 @@ export default async function Home() {
   if (token) {
     const user = await verifyToken(token);
     if (user) {
-      redirect("/chat");
+      redirect("/dashboard");
     }
   }
 

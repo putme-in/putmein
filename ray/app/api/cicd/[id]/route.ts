@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyToken } from "@/lib/auth";
+import { readProjectSetup, saveProjectSetup, validateSetupSource } from "@/lib/project-setup-store";
 import prisma from "@/lib/prisma";
+import { supportsGitHubPush, redactGitUrl } from "@/lib/git-url";
 import { detectProjectStack, detectContainerStack } from "@/lib/project-detector";
 import { validateTcpPort } from "@/lib/port-validator";
 
@@ -99,6 +101,8 @@ export async function GET(
 
     const formatted = {
       ...pipeline,
+      repoUrl: redactGitUrl(pipeline.repoUrl),
+      autoDeploy: pipeline.autoDeploy && supportsGitHubPush(pipeline.repoUrl),
       framework: stack.framework,
       frameworkSlug: stack.frameworkSlug,
       language: stack.language,
@@ -150,6 +154,8 @@ export async function PATCH(
 
     const body = await req.json();
 
+    if (body.autoDeploy === true && !supportsGitHubPush(pipeline.repoUrl)) return NextResponse.json({ error: "Automatic push triggers currently require GitHub. Run this external Git pipeline manually." }, { status: 400 });
+
     if (body.port !== undefined) {
       const portValidation = validateTcpPort(body.port);
       if (!portValidation.valid) {
@@ -165,6 +171,13 @@ export async function PATCH(
       }
     }
 
+    if (body.port !== undefined && pipeline.projectId) {
+      const saved = await readProjectSetup(pipeline.userId, pipeline.projectId);
+      if (saved) {
+        try { await saveProjectSetup(pipeline.userId, pipeline.projectId, validateSetupSource({ ...saved, hostPort: Number(body.port) })); }
+        catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid setup port" }, { status: 400 }); }
+      }
+    }
     const updated = await prisma.rayPipeline.update({
       where: { id },
       data: {
@@ -223,7 +236,7 @@ export async function POST(
           { name: "Container Deploy", status: "pending", durationMs: 0 },
           { name: "Healthcheck", status: "pending", durationMs: 0 },
         ]),
-        logs: "Initiating pipeline execution...\nConnecting to repository: " + pipeline.repoUrl + "\n",
+        logs: "Initiating pipeline execution...\nConnecting to repository: " + redactGitUrl(pipeline.repoUrl) + "\n",
       },
     });
 

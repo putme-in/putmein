@@ -138,6 +138,22 @@ export async function POST(
       } catch { /* non-blocking */ }
     }
 
+    // A security gate has a structured report; do not ask a model to guess or bypass it.
+    const scanId = logs.match(/\bscan_\d+\b/)?.[0];
+    if (scanId && /security.*(?:blocked|incomplete)|(?:blocked|incomplete).*security/i.test(logs)) {
+      const scan = await prisma.raySecurityScan.findFirst({ where: { id: scanId, userId: user.userId } });
+      const findings: { title?: string; file?: string; line?: number; severity?: string }[] = scan ? JSON.parse(scan.findings || "[]") : [];
+      return NextResponse.json({ diagnosis: {
+        summary: scan ? `Deployment blocked by security checks: ${scan.dangerCount} danger findings, ${scan.warnCount} warnings` : "Deployment blocked by security checks",
+        rootCause: "The deployment stopped at a security checkpoint. Retrying unchanged source will encounter the same check. Pattern matches require review; they are not proof of exploitable vulnerabilities.",
+        fixSteps: [
+          ...findings.filter(f => f.severity === "danger").slice(0, 12).map(f => `${f.title || "Security finding"} — ${f.file || "source"}${f.line ? `:${f.line}` : ""}`),
+          "Open the security report and review each finding, including examples that may be false positives.",
+          "Fix confirmed issues before retrying. This troubleshooter does not change source or approve security exceptions.",
+        ], commands: [], canAutoFix: false, securityScanId: scanId,
+      } });
+    }
+
     // Call Brain's AI Diagnostic engine
     const targetId = deployment?.projectId || deployment?.id || id || "default";
     const projectPath = deployment?.projectPath || body.projectPath || "";

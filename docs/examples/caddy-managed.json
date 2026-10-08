@@ -1,0 +1,15 @@
+{
+  "admin": { "listen": "127.0.0.1:2019" },
+  "apps": {
+    "http": {
+      "servers": {
+        "ray": {
+          "@id": "ray-managed-server",
+          "listen": [":443"],
+          "tls_connection_policies": [{}],
+          "routes": [{ "handle": [{ "handler": "static_response", "status_code": 404 }] }]
+        }
+      }
+    }
+  }
+}

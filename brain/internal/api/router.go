@@ -116,9 +116,14 @@ func NewRouter() http.Handler {
 	mux.HandleFunc("/v1/monitor/alerts", monitorAlertsHandler)
 
 	// Security routes
-	mux.HandleFunc("/v1/security/scan", securityScanHandler)
+	mux.HandleFunc("/v1/security/scan", requireInternalSecret(securityScanHandler))
+	mux.HandleFunc("/v1/security/advanced", requireInternalSecret(securityAdvancedHandler))
 	mux.HandleFunc("/v1/security/rules", securityRulesHandler)
 	mux.HandleFunc("/v1/security/scans", securityScansHandler)
+
+	mux.HandleFunc("/v1/monitor/config", requireInternalSecret(monitorConfigHandler))
+
+	mux.HandleFunc("/v1/deploy/legacy", requireInternalSecret(legacyArtifactsHandler))
 
 	// Deploy routes
 	mux.HandleFunc("/v1/deploy", requireInternalSecret(deployHandler))

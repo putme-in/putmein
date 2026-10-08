@@ -145,10 +145,10 @@ export default function SetupPage() {
       }
 
       // Successful setup — redirect into dashboard or requested destination
-      let destination = "/chat";
+      let destination = "/dashboard";
       if (typeof window !== "undefined") {
         const searchParams = new URLSearchParams(window.location.search);
-        destination = getSafeRedirectUrl(searchParams.get("from"));
+        destination = getSafeRedirectUrl(searchParams.get("from"), "/dashboard");
       }
       window.location.href = destination;
     } catch {

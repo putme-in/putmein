@@ -1,5 +1,7 @@
 "use client";
 
+import GitConnections from "@/components/GitConnections";
+
 import { useState, useEffect } from "react";
 import { Icon } from "@iconify/react";
 
@@ -207,11 +209,13 @@ export default function SettingsPage() {
         body: JSON.stringify({ securityChecksEnabled: nextVal }),
       });
       const data = await res.json();
+      if (!res.ok) { setSecurityChecksEnabled(!nextVal); alert(data.error || "Could not update security policy"); setSecurityChecksSaving(false); return; }
       if (data && typeof data.securityChecksEnabled === "boolean") {
         setSecurityChecksEnabled(data.securityChecksEnabled);
       }
     } catch {
-      // optimistic toggle kept
+      setSecurityChecksEnabled(!nextVal);
+      alert("Could not update security policy. Please retry.");
     }
     setSecurityChecksSaving(false);
   };
@@ -935,7 +939,7 @@ export default function SettingsPage() {
                 )}
               </div>
               <div className="text-xs text-[#52525b]">
-                Audit repositories for known Next.js/React CVEs, exposed secrets, Dockerfile vulnerabilities, and OWASP security flaws upon first deployment and on CI/CD pipeline triggers. Halts deployment if danger-level vulnerabilities are identified until dual consent is provided.
+                Scan source before every managed deployment, including uploads, rebuilds, Git updates and host execution. Danger findings and incomplete scans block release. Changed-file scans retain earlier findings; administrator settings apply server-wide. Pattern checks do not replace a full security audit.
               </div>
             </div>
             <button
@@ -998,7 +1002,7 @@ export default function SettingsPage() {
                 <line x1="12" y1="17" x2="12.01" y2="17" />
               </svg>
               <span>
-                <strong>Automated security checks are disabled.</strong> Code will be built and deployed without automated vulnerability scanning or danger gates in CI/CD pipelines.
+                <strong>Automated security checks are disabled.</strong> All managed deployment paths will build and deploy without this security gate. Skipped checks are recorded explicitly.
               </span>
             </div>
           )}
@@ -1016,10 +1020,10 @@ export default function SettingsPage() {
           {/* Section Header */}
           <div className="mb-4">
             <h2 className="font-jersey text-xl text-white tracking-wide mb-1">
-              Deployment Routing Mode
+              Legacy Domain Preferences
             </h2>
             <p className="text-xs text-[#52525b]">
-              Configure whether projects are accessed via direct host ports or exposed through wildcard and custom domain routing.
+              Saved domain suggestions for existing tools. New deployments choose direct port or managed HTTPS in their own setup; managed HTTPS requires configured Caddy and DNS.
             </p>
           </div>
 
@@ -1129,7 +1133,7 @@ export default function SettingsPage() {
                   </span>
                 </div>
                 <p className="text-xs text-[#888] leading-relaxed">
-                  Reverse proxies inbound requests via sslip.io wildcard subdomains or your custom root domain.
+                  Domain naming preference for sslip.io or your custom root domain. This does not provision a route or certificate.
                 </p>
               </div>
             </div>
@@ -1220,8 +1224,8 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between pt-3 border-t border-[#1a1a1a] flex-wrap gap-3">
             <div className="text-xs text-[#52525b]">
               {routingMode === "domain"
-                ? "Deployments and AI agents will create domain routes using the selected provider."
-                : "Deployments and AI agents will map conflict-free host ports on localhost."}
+                ? "Configure managed HTTPS explicitly in each project’s deployment setup."
+                : "Choose direct port access in deployment setup. Explicit ports must be available."}
             </div>
             <button
               type="button"
@@ -1583,6 +1587,7 @@ export default function SettingsPage() {
 
         {/* GitHub Integration Section */}
         <GitHubSettingsCard />
+        <GitConnections manage />
 
         {/* Danger Zone */}
         <div

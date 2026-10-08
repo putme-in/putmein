@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyToken } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { hostRuntimeHandle } from "@/lib/host-runtime";
+
+export const maxDuration = 480;
 
 const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 const BRAIN_INTERNAL_SECRET = process.env.BRAIN_INTERNAL_SECRET || "";
@@ -21,6 +24,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       select: { id: true, name: true, projectPath: true, runCommand: true, managedPid: true, managedLogFile: true },
     });
     if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    if (project.managedLogFile && /application-[a-f0-9]+\.log$/.test(project.managedLogFile)) {
+      const deployment = await prisma.rayDeployment.findFirst({ where: { projectId: id, userId: user.userId, containerName: hostRuntimeHandle(user.userId, id) }, orderBy: { updatedAt: "desc" } });
+      return NextResponse.json({
+        processes: project.managedPid ? [{ pid: project.managedPid, command: project.runCommand || "", runtime: "host", logFile: project.managedLogFile, port: deployment?.hostPort, url: deployment?.deployUrl }] : [],
+        suggestedCommand: project.runCommand || "", managedPid: project.managedPid, managedLogFile: project.managedLogFile,
+        managedPort: deployment?.hostPort, managedUrl: deployment?.deployUrl, container: null, runtime: "host",
+      });
+    }
 
     // Ask Brain to detect running processes
     interface RunningProc {
@@ -90,24 +102,39 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { id } = await params;
     const project = await prisma.rayMonitorProject.findFirst({
       where: { id, userId: user.userId },
-      select: { id: true, projectPath: true, runCommand: true },
+      select: { id: true, projectPath: true, runCommand: true, managedLogFile: true },
     });
     if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const body = await req.json();
     const { action, command, killPid, containerName } = body as { action: "spawn" | "stop" | "restart-container"; command?: string; killPid?: number; containerName?: string };
 
+    if (project.managedLogFile && /application-[a-f0-9]+\.log$/.test(project.managedLogFile)) {
+      if (!["stop", "spawn", "restart-container"].includes(action)) return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+      if (action === "spawn" && command && command !== project.runCommand) return NextResponse.json({ error: "Change the start command in Deployment setup, then rebuild." }, { status: 400 });
+      const response = await fetch(`${BRAIN_URL}/v1/deploy/action`, {
+        method: "POST", headers: { "Content-Type": "application/json", "x-brain-secret": BRAIN_INTERNAL_SECRET },
+        body: JSON.stringify({ action: action === "stop" ? "stop" : "restart", container: hostRuntimeHandle(user.userId, id) }),
+        signal: AbortSignal.timeout(450000),
+      });
+      if (!response.ok) return NextResponse.json({ error: await response.text() }, { status: 502 });
+      const updated = await prisma.rayMonitorProject.findUnique({ where: { id } });
+      return NextResponse.json({ ok: true, action: action === "stop" ? "stopped" : "restarted", pid: updated?.managedPid, logFile: updated?.managedLogFile, command: updated?.runCommand });
+    }
+
+    if (containerName && (action === "stop" || action === "restart-container")) {
+      const linked = await prisma.rayDeployment.findFirst({ where: { userId: user.userId, projectId: id, OR: [{ containerName }, { containerId: containerName }] } });
+      if (!linked?.containerName) return NextResponse.json({ error: "This container is not linked to this project's deployment." }, { status: 403 });
+      try {
+        const response = await fetch(`${BRAIN_URL}/v1/containers/${encodeURIComponent(linked.containerName)}/${action === "stop" ? "stop" : "restart"}`, {
+          method: "POST", headers: { "x-brain-secret": BRAIN_INTERNAL_SECRET }, signal: AbortSignal.timeout(45000),
+        });
+        if (!response.ok) return NextResponse.json({ error: "Container action or route cleanup failed. Check Brain and Caddy." }, { status: 502 });
+        if (action === "stop") await prisma.rayDeployment.update({ where: { id: linked.id }, data: { status: "stopped" } });
+      } catch { return NextResponse.json({ error: "Container control is unavailable." }, { status: 502 }); }
+      if (action === "restart-container") return NextResponse.json({ ok: true, action: "restarted" });
+    }
     if (action === "stop") {
-      if (containerName) {
-        try {
-          await fetch(`${BRAIN_URL}/v1/tools/exec`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-internal-secret": BRAIN_INTERNAL_SECRET },
-            body: JSON.stringify({ command: `docker stop ${containerName}` }),
-            signal: AbortSignal.timeout(10000),
-          });
-        } catch { /* silent */ }
-      }
 
       // Tell Brain to stop
       try {
@@ -126,19 +153,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ ok: true, action: "stopped" });
     }
 
-    if (action === "restart-container") {
-      if (containerName) {
-        try {
-          await fetch(`${BRAIN_URL}/v1/tools/exec`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-internal-secret": BRAIN_INTERNAL_SECRET },
-            body: JSON.stringify({ command: `docker restart ${containerName}` }),
-            signal: AbortSignal.timeout(15000),
-          });
-        } catch { /* silent */ }
-      }
-      return NextResponse.json({ ok: true, action: "restarted" });
-    }
+    if (action === "restart-container") return NextResponse.json({ error: "Choose a linked container." }, { status: 400 });
 
     // action === "spawn"
     const cmd = command || project.runCommand || "npm run dev";

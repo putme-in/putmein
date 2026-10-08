@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
+import Link from "next/link";
 
 import Sidebar from "@/components/Sidebar";
 import TerminalPanel from "@/components/TerminalPanel";
@@ -234,9 +235,7 @@ function LiveDeploymentWidget({
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-bold text-white tracking-tight truncate">{deployment.name}</span>
-                    <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-md bg-white/[0.04] text-white/50 border border-white/5">
-                      {deployment.branch || "main"}{deployment.commitHash ? ` · ${deployment.commitHash}` : ""}
-                    </span>
+
                   </div>
                   <p className="text-[11px] font-medium text-white/50 mt-0.5 truncate">
                     {isBuilding
@@ -813,10 +812,10 @@ export default function ClientLayout({ children, user }: ClientLayoutProps) {
                   <line x1="3" y1="18" x2="21" y2="18" />
                 </svg>
               </button>
-              <div className="flex items-center gap-2.5 flex-1">
+              <Link href="/dashboard" className="flex items-center gap-2.5 flex-1 cursor-pointer">
                 <Image src="/logo.svg" alt="Ray" width={28} height={28} className="w-[28px] h-[28px] object-contain" priority />
                 <span className="font-jersey text-xl text-white tracking-wide">ray</span>
-              </div>
+              </Link>
 
               {/* Terminal toggle in mobile top bar */}
               <button

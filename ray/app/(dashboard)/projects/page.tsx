@@ -3,6 +3,9 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import DeploymentSetupFields from "@/components/DeploymentSetupFields";
+import { defaultProjectSetup } from "@/lib/project-setup";
+import ProjectSetupFields, { type ProjectSourceAnalysis } from "@/components/ProjectSetupFields";
 import { Icon } from "@iconify/react";
 import { getPrimaryProjectUrl } from "@/lib/domains";
 
@@ -69,7 +72,9 @@ export default function ProjectsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newName, setNewName] = useState("");
   const [newPath, setNewPath] = useState("");
-  const [newUrl, setNewUrl] = useState("");
+  const [setup, setSetup] = useState(defaultProjectSetup);
+  const [sourceAnalysis, setSourceAnalysis] = useState<ProjectSourceAnalysis | null>(null);
+  const [appDirectory, setAppDirectory] = useState(".");
   const [submitting, setSubmitting] = useState(false);
   const [addError, setAddError] = useState("");
 
@@ -90,23 +95,44 @@ export default function ProjectsPage() {
     return () => clearInterval(interval);
   }, [fetchProjects]);
 
+  const analyzeSource = async () => {
+    setSubmitting(true);
+    setAddError("");
+    try {
+      const res = await fetch("/api/deploy/analyze", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceRoot: sourceAnalysis?.sourceRoot || newPath, appDirectory }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not analyze project");
+      setSourceAnalysis(data);
+      setAppDirectory(data.appDirectory);
+      if (!newName) setNewName(data.projectPath.split(/[\\/]/).filter(Boolean).pop() || "my-app");
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : "Could not analyze project");
+    } finally { setSubmitting(false); }
+  };
+
   const handleAddProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName || !newPath) return;
+    if (!sourceAnalysis) { await analyzeSource(); return; }
+    if (!newName.trim() || submitting || appDirectory !== sourceAnalysis.appDirectory) return;
     setSubmitting(true);
     setAddError("");
     try {
       const res = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName, projectPath: newPath, projectUrl: newUrl }),
+        body: JSON.stringify({ name: newName, projectPath: sourceAnalysis.projectPath, projectUrl: setup.projectUrl, runCommand: setup.startCommand, setup: { ...setup, sourceRoot: sourceAnalysis.sourceRoot, appDirectory: sourceAnalysis.appDirectory } }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to add project");
       setShowAddModal(false);
       setNewName("");
       setNewPath("");
-      setNewUrl("");
+      setSetup(defaultProjectSetup());
+      setSourceAnalysis(null);
+      setAppDirectory(".");
       fetchProjects();
       router.push(`/projects/${data.project.id}`);
     } catch (err: unknown) {
@@ -359,47 +385,29 @@ export default function ProjectsPage() {
             if (e.target === e.currentTarget) setShowAddModal(false);
           }}
         >
-          <div className="w-full max-w-md rounded-2xl p-6 bg-[#0e0e0e] border border-white/[0.12] shadow-2xl">
-            <h2 className="font-jersey text-2xl text-white tracking-wide mb-1">Add Project</h2>
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl p-6 bg-[#0e0e0e] border border-white/[0.12] shadow-2xl">
+            <h2 className="font-semibold text-2xl text-white tracking-wide mb-1">Add Project</h2>
             <p className="text-xs text-white/50 mb-5 font-normal">
               Register a project root folder to inspect its file structure, track memory, and connect tools.
             </p>
 
             <form onSubmit={handleAddProject} className="flex flex-col gap-4">
-              <div>
-                <label className="block text-[11px] font-bold text-white/50 uppercase tracking-wider mb-1.5">Project Name</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. yukthi, my-api"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="w-full bg-[#141414] border border-white/10 focus:border-white/25 focus:outline-none text-xs text-white placeholder:text-white/30 rounded-lg py-2 px-3 transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-white/50 uppercase tracking-wider mb-1.5">Project Absolute Path</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="/Users/.../projects/my-app"
-                  value={newPath}
-                  onChange={(e) => setNewPath(e.target.value)}
-                  className="w-full bg-[#141414] border border-white/10 focus:border-white/25 focus:outline-none text-xs text-white placeholder:text-white/30 font-mono rounded-lg py-2 px-3 transition-all"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-white/50 uppercase tracking-wider mb-1.5">Local URL (optional)</label>
-                <input
-                  type="text"
-                  placeholder="http://localhost:3000"
-                  value={newUrl}
-                  onChange={(e) => setNewUrl(e.target.value)}
-                  className="w-full bg-[#141414] border border-white/10 focus:border-white/25 focus:outline-none text-xs text-white placeholder:text-white/30 font-mono rounded-lg py-2 px-3 transition-all"
-                />
-              </div>
+              {!sourceAnalysis ? (
+                <div>
+                  <label htmlFor="existing-source-path" className="ray-eyebrow block mb-1.5">Project absolute path</label>
+                  <input id="existing-source-path" required placeholder="/srv/projects/my-app" value={newPath}
+                    onChange={event => setNewPath(event.target.value)} disabled={submitting}
+                    className="ray-input font-mono text-xs" />
+                </div>
+              ) : (
+                <ProjectSetupFields name={newName} onNameChange={setNewName} analysis={sourceAnalysis}
+                  appDirectory={appDirectory} onDirectoryChange={setAppDirectory} onAnalyze={analyzeSource} busy={submitting}>
+                  <DeploymentSetupFields value={setup} onChange={setSetup} existing />
+                  <button type="button" className="ray-btn-ghost text-xs self-start" onClick={() => {
+                    setSourceAnalysis(null); setSetup(defaultProjectSetup()); setAppDirectory("."); setAddError("");
+                  }}>Change source path</button>
+                </ProjectSetupFields>
+              )}
 
               {addError && (
                 <p className="text-xs text-red-400">{addError}</p>
@@ -415,11 +423,11 @@ export default function ProjectsPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={submitting || Boolean(sourceAnalysis && appDirectory !== sourceAnalysis.appDirectory)}
                   className="ray-btn-primary flex-1 py-2 text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   {submitting && <SpinIcon />}
-                  <span>Add Project</span>
+                  <span>{sourceAnalysis ? "Add Project" : "Next · Project setup"}</span>
                 </button>
               </div>
             </form>

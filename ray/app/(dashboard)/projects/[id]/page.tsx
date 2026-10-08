@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@iconify/react";
+import ProjectDeploymentSettings from "@/components/ProjectDeploymentSettings";
 import DeployDiagnosisModal from "@/components/DeployDiagnosisModal";
 import { parseProjectDomains, getPrimaryProjectUrl, normalizeDomain } from "@/lib/domains";
 import TerminalView from "@/components/TerminalView";
@@ -27,6 +28,8 @@ interface ProjectData {
   memory?: string | null;
   memoryStatus?: string | null;
   isDocker?: boolean;
+  runtime?: "host" | "docker";
+  managedPid?: number | null;
   framework?: string;
   frameworkSlug?: string;
   language?: string;
@@ -77,6 +80,7 @@ interface PipelineData {
     status: string;
     commitHash?: string;
     commitMessage?: string;
+    logs?: string | null;
     createdAt: string;
   }>;
 }
@@ -276,6 +280,7 @@ export default function ProjectDetailPage({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            projectId: project.id,
             name: project.name,
             projectPath: project.projectPath,
             sourceType: "local",
@@ -1106,6 +1111,8 @@ export default function ProjectDetailPage({
                   </div>
                 </div>
 
+                <ProjectDeploymentSettings projectId={String(id)} />
+
                 {/* 2. CONNECTED SERVICES SECTION */}
                 <div id="section-services">
                   <h2 className="font-sans font-bold text-lg text-white tracking-tight mb-1">Connected Services</h2>
@@ -1118,8 +1125,8 @@ export default function ProjectDetailPage({
                     <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-5 flex flex-col justify-between shadow-lg">
                       <div>
                         <div className="flex items-center justify-between gap-2 mb-3">
-                          <span className="text-[11px] font-bold text-white/50 uppercase tracking-wider">Container</span>
-                          {project?.container ? (
+                          <span className="text-[11px] font-bold text-white/50 uppercase tracking-wider">{project?.runtime === "host" ? "Host process" : "Container"}</span>
+                          {project?.runtime === "host" ? (<span className="text-xs text-white/60">{project.status}</span>) : project?.container ? (
                             <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/[0.08] border border-emerald-500/20 text-emerald-300">
                               {project.container.status || "running"}
                             </span>
@@ -1130,7 +1137,7 @@ export default function ProjectDetailPage({
                           )}
                         </div>
 
-                        {project?.container ? (
+                        {project?.runtime === "host" ? (<p className="text-xs text-white/60">Runs directly on this server. {project.managedPid ? `PID: ${project.managedPid}` : "Process is stopped."}</p>) : project?.container ? (
                           <div className="space-y-1.5 text-xs font-mono">
                             <p className="text-white font-semibold truncate">{project.container.name}</p>
                             <p className="text-[11px] text-white/50 truncate">Port: :{allocatedPort}</p>
@@ -1146,7 +1153,7 @@ export default function ProjectDetailPage({
                       </div>
 
                       <div className="mt-4 pt-3 border-t border-white/[0.06]">
-                        {project?.container ? (
+                        {project?.runtime === "host" ? (<Link href={`/monitor/${project.id}`} className="text-xs text-sky-400">View application logs ↗</Link>) : project?.container ? (
                           <Link
                             href={`/containers/${project.container.id || project.container.name}`}
                             className="text-xs font-medium text-sky-400 hover:text-sky-300 flex items-center gap-1"
@@ -1700,10 +1707,10 @@ export default function ProjectDetailPage({
               initialCwd={project.projectPath}
               projectPath={project.projectPath}
               projectName={project.name}
-              containerId={project.container?.id || project.container?.name || project.deployment?.containerName || null}
-              containerName={project.container?.name || project.deployment?.containerName || null}
-              hasContainer={!!(project.container || project.deployment?.containerName)}
-              shellMode={project.container || project.deployment?.containerName ? "container" : "host"}
+              containerId={project?.runtime === "host" ? null : project.container?.id || project.container?.name || project.deployment?.containerName || null}
+              containerName={project?.runtime === "host" ? null : project.container?.name || project.deployment?.containerName || null}
+              hasContainer={project?.runtime !== "host" && !!(project.container || project.deployment?.containerName)}
+              shellMode={project?.runtime !== "host" && (project.container || project.deployment?.containerName) ? "container" : "host"}
             />
           </div>
         )}
@@ -1990,9 +1997,9 @@ export default function ProjectDetailPage({
                     {/* Quick Metadata Grid */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5 pt-5 border-t border-white/[0.06]">
                       <div className="p-3 rounded-xl bg-[#121212] border border-white/[0.06]">
-                        <span className="block text-[10px] font-bold text-white/40 uppercase tracking-wider mb-1">Docker Container</span>
+                        <span className="block text-[10px] font-bold text-white/40 uppercase tracking-wider mb-1">{project.runtime === "host" ? "Host process" : "Docker Container"}</span>
                         <p className="text-xs font-mono text-white/90 truncate">
-                          {project.deployment.containerName || `ray-${project.deployment.name}`}
+                          {project.runtime === "host" ? (project.managedPid ? `PID ${project.managedPid}` : "Stopped") : project.deployment.containerName || `ray-${project.deployment.name}`}
                         </p>
                       </div>
                       <div className="p-3 rounded-xl bg-[#121212] border border-white/[0.06]">
@@ -2018,7 +2025,7 @@ export default function ProjectDetailPage({
                   <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] overflow-hidden shadow-lg flex flex-col">
                     <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="font-sans font-bold text-xs text-white">Build & Container Output</span>
+                        <span className="font-sans font-bold text-xs text-white">Deployment Output</span>
                         <span className="text-[10px] font-mono text-white/30">── Live Logs</span>
                       </div>
                       <button
@@ -2077,6 +2084,7 @@ export default function ProjectDetailPage({
               {(() => {
                 const latestScan = securityScans[0];
                 const blockedRun = pipeline?.runs?.find((r) => r.status === "blocked_danger");
+                const blockingScan = securityScans.find(scan => blockedRun?.logs?.includes(`[SECURITY_SCAN] ${scan.id}\n`));
 
                 let findingsList: any[] = [];
                 try {
@@ -2126,8 +2134,8 @@ export default function ProjectDetailPage({
                                 </label>
 
                                 <button
-                                  onClick={() => handleAuthorizeProjectOverride(blockedRun.id, pipeline?.id, latestScan?.id)}
-                                  disabled={!overrideAck || overrideSubmitting}
+                                  onClick={() => handleAuthorizeProjectOverride(blockedRun.id, pipeline?.id, blockingScan?.id)}
+                                  disabled={!overrideAck || overrideSubmitting || !blockingScan}
                                   className="ray-btn-primary px-4 py-2 text-xs font-bold shrink-0 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                                 >
                                   {overrideSubmitting ? <SpinIcon size={14} /> : <Icon icon="lucide:unlock" className="w-4 h-4" />}
@@ -2147,7 +2155,7 @@ export default function ProjectDetailPage({
                           <div className="flex items-center gap-3 flex-wrap">
                             <h2 className="font-sans font-bold text-xl text-white tracking-tight">Security Posture</h2>
                             {latestScan ? (
-                              latestScan.status === "danger" ? (
+                              ["error", "skipped"].includes(latestScan.status) ? (<span className="text-xs text-amber-400">{latestScan.status === "error" ? "Scan incomplete" : "Not scanned (disabled)"}</span>) : latestScan.status === "danger" ? (
                                 <span className="text-[11px] font-bold px-2.5 py-0.5 rounded uppercase font-mono bg-red-500/10 text-red-400 border border-red-500/20 flex items-center gap-1.5">
                                   <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
                                   Danger ({latestScan.dangerCount} Critical)
@@ -2160,7 +2168,7 @@ export default function ProjectDetailPage({
                               ) : (
                                 <span className="text-[11px] font-bold px-2.5 py-0.5 rounded uppercase font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                  Clean (Passing)
+                                  Passed implemented checks
                                 </span>
                               )
                             ) : (
@@ -2468,8 +2476,8 @@ function DeleteProjectModal({
               <div className="flex items-start gap-2.5 text-xs">
                 <Icon icon="logos:docker-icon" width={16} height={16} className="shrink-0 mt-0.5" />
                 <div className="min-w-0">
-                  <p className="font-mono font-medium text-white/90">Docker Container & Image</p>
-                  <p className="text-[11px] font-mono text-white/40 truncate">{containerName}</p>
+                  <p className="font-mono font-medium text-white/90">{project.runtime === "host" ? "Host process & runtime logs" : "Docker Container & Image"}</p>
+                  <p className="text-[11px] font-mono text-white/40 truncate">{project.runtime === "host" ? project.name : containerName}</p>
                 </div>
               </div>
 

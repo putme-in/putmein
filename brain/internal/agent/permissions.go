@@ -20,10 +20,10 @@ var (
 	deploymentsPath       = ""
 	savedApiKeys          = make(map[string]string)
 	securityChecksEnabled = true
-	routingMode           = "" // "port" | "domain" (auto-detected if empty)
+	routingMode           = ""      // "port" | "domain" (auto-detected if empty)
 	domainProvider        = "sslip" // "sslip" | "custom"
-	customRootDomain      = "" // e.g. "example.com"
-	executionMode         = "plan" // "plan" (Plan first then Action) | "action" (Direct Action)
+	customRootDomain      = ""      // e.g. "example.com"
+	executionMode         = "plan"  // "plan" (Plan first then Action) | "action" (Direct Action)
 )
 
 // settingsPath returns the path to the persistent settings file.
@@ -185,6 +185,9 @@ func saveSettings() {
 }
 
 func init() {
+	if len(os.Args) > 1 && os.Args[1] == "--internal-host-log-runner" {
+		return
+	}
 	loadSettings()
 }
 
@@ -437,4 +440,3 @@ func RequiresApproval(toolName, arg string) bool {
 	}
 	return false
 }
-

@@ -11,6 +11,7 @@ interface DeploymentItem {
   id: string;
   name: string;
   sourceType: string;
+  runtime?: "host" | "docker";
   repoUrl?: string | null;
   branch?: string | null;
   commitHash?: string | null;
@@ -185,13 +186,25 @@ export default function DeploymentsPage() {
             Real-time status of containerized builds, Docker containers, folder uploads, and GitHub repo deployments.
           </p>
         </div>
-        <button
-          onClick={fetchDeployments}
-          className="ray-btn-ghost flex items-center gap-1.5 text-xs px-3.5 py-2 cursor-pointer"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-          <span>Refresh</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={fetchDeployments}
+            className="ray-btn-ghost flex items-center gap-1.5 text-xs px-3.5 py-2 cursor-pointer"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            <span>Refresh</span>
+          </button>
+          <Link
+            href="/deployments/new"
+            className="ray-btn-primary flex items-center gap-1.5 text-xs px-3.5 py-2 font-medium cursor-pointer"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            <span>Deploy</span>
+          </Link>
+        </div>
       </div>
 
       {/* Port Allocation & Conflict Guard Overview */}
@@ -438,7 +451,7 @@ export default function DeploymentsPage() {
                     </div>
 
                     <p className="text-[11px] font-mono text-white/40 truncate mt-1">
-                      Container: {containerName} · Source: {dep.sourceType} {dep.repoUrl ? `· ${dep.repoUrl}` : `· ${dep.projectPath}`}
+                      {dep.runtime === "host" ? "Runtime: Host process" : `Container: ${containerName}`} · Source: {dep.sourceType} {dep.repoUrl ? `· ${dep.repoUrl}` : `· ${dep.projectPath}`}
                     </p>
                   </div>
                 </div>
@@ -503,7 +516,7 @@ export default function DeploymentsPage() {
                       onClick={() => handleRedeploy(dep)}
                       disabled={redeployingId === dep.id}
                       className="ray-btn-ghost flex items-center gap-1.5 text-xs px-3 py-1.5 cursor-pointer disabled:opacity-40"
-                      title="Trigger a clean rebuild and container launch"
+                      title="Rebuild and launch the application"
                     >
                       {redeployingId === dep.id ? (
                         <SpinIcon size={12} />
@@ -633,7 +646,7 @@ export default function DeploymentsPage() {
             {/* Modal Footer */}
             <div className="p-3.5 border-t border-white/[0.08] flex items-center justify-between bg-[#0a0a0a]">
               <span className="text-[11px] text-white/40 font-mono">
-                Container: {selectedLogsDep.container?.name || selectedLogsDep.containerName || `ray-${selectedLogsDep.name}`}
+                {selectedLogsDep.runtime === "host" ? "Runtime: Host process · Application output is available in Monitor" : `Container: ${selectedLogsDep.container?.name || selectedLogsDep.containerName || `ray-${selectedLogsDep.name}`}`}
               </span>
               <div className="flex items-center gap-2">
                 <button

@@ -17,6 +17,10 @@ Navigate directly to the focused developer guides:
 * [**Prerequisites**](/developer/prerequisites) — System runtimes, Node.js, npm, Go, and Docker requirements across all monorepo packages.
 * [**Setting up the Project**](/developer/setup) — Step-by-step instructions for cloning, installing dependencies, configuring environments, and compiling components.
 
+* [**Application Detection and Deployment**](./application-frameworks.md) — Framework registry, signatures, and deployment extension points.
+* [**Security Rules and Scanning**](./security-rules.md) — Security file map, rule authoring, and current scan coverage.
+* [**Monitoring Rules**](./monitoring-rules.md) — Application logs, deterministic alerts, and runtime error signatures.
+
 ---
 
 ## Architecture Overview
@@ -64,6 +68,13 @@ node bin/ray.js stop
 
 ---
 
+## Pipeline development
+
+- [Concurrency, Rollback & Cleanup](./deployment-lifecycle.md): lifecycle locking, recovery, retention policy and contributor file map.
+
+- [Git Sources & Private Repositories](./git-sources.md): credential storage, source preparation and CI/CD access.
+- [Project Setup](./project-setup.md): saved configuration, lifecycle, storage and extension points.
+
 ## Contributing
 
 We welcome contributions of all kinds. When submitting pull requests:
@@ -71,3 +82,5 @@ We welcome contributions of all kinds. When submitting pull requests:
 2. Maintain design system consistency across web interfaces.
 3. Preserve existing database integrity and avoid disruptive schema modifications.
 4. Submit pull requests to the `main` branch with comprehensive testing details.
+
+* [**Templates, Health Checks and HTTPS**](./deployment-services.md) — Production assumptions, startup probes, and managed Caddy routing.

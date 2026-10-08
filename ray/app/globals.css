@@ -429,6 +429,39 @@ body {
   animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 
+@keyframes loadingBarSlide {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(20%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+.animate-loading-bar {
+  animation: loadingBarSlide 1.3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes fillGreen {
+  0% {
+    opacity: 0.5;
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+  100% {
+    opacity: 1;
+    transform: scaleX(1);
+    transform-origin: left;
+  }
+}
+
+.animate-fill-green {
+  animation: fillGreen 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 /* Stagger */
 .stagger-children>*:nth-child(1) {
   animation-delay: 0ms;

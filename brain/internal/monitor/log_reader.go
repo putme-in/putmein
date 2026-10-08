@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"brain/server/internal/hostlogs"
 	"context"
 	"fmt"
 	"io"
@@ -9,18 +10,30 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // TailFile reads new bytes from path starting at offset.
 // Returns the new content and the updated offset.
 func TailFile(path string, offset int64) (content string, newOffset int64, err error) {
+	if hostlogs.IsManaged(path) {
+		return hostlogs.ReadSince(path, offset, 64*1024)
+	}
 	if strings.HasPrefix(path, "docker:") {
 		containerName := strings.TrimPrefix(path, "docker:")
-		out, err := RunLogCommand(context.Background(), fmt.Sprintf("docker logs --tail 100 %s 2>&1", shellEscape(containerName)))
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		args := []string{"logs", "--timestamps", "--tail", "1000"}
+		if offset > 0 {
+			args = append(args, "--since", time.Unix(0, offset).UTC().Format(time.RFC3339Nano))
+		}
+		boundary := time.Now().UnixNano()
+		args = append(args, "--until", time.Unix(0, boundary).UTC().Format(time.RFC3339Nano), containerName)
+		out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput()
 		if err != nil {
 			return "", offset, err
 		}
-		return out, int64(len(out)), nil
+		return string(out), boundary, nil
 	}
 
 	f, err := os.Open(path)
@@ -51,6 +64,9 @@ func TailFile(path string, offset int64) (content string, newOffset int64, err e
 // ReadFileTail reads up to the last `lines` lines from the given file path.
 // It seeks near the end of the file (up to 2MB) for performance on large log files.
 func ReadFileTail(path string, lines int) (string, error) {
+	if hostlogs.IsManaged(path) {
+		return hostlogs.ReadTail(path, lines)
+	}
 	if lines <= 0 {
 		lines = 100
 	}
@@ -281,65 +297,23 @@ func detectProjectType(projectPath string) string {
 }
 
 // buildLogCommand returns the best shell command to capture live logs for a project.
-// Priority: PM2 > systemd > recent log files > process listing.
+// Priority: PM2 > systemd. File logs are returned separately by discovery.
 func buildLogCommand(ctx context.Context, projectPath string, projectType string) string {
 	baseName := filepath.Base(projectPath)
 
 	// PM2 check
 	if out, err := RunLogCommand(ctx, "pm2 list --no-color 2>/dev/null"); err == nil && strings.Contains(out, baseName) {
-		return fmt.Sprintf("pm2 logs %s --lines 150 --nostream 2>&1 || true", baseName)
+		return fmt.Sprintf("pm2 logs %s --lines 150 --nostream 2>&1 || true", shellEscape(baseName))
 	}
 
 	// systemd check
-	if out, err := RunLogCommand(ctx, fmt.Sprintf("systemctl is-active %s 2>/dev/null", baseName)); err == nil && strings.TrimSpace(out) == "active" {
-		return fmt.Sprintf("journalctl -u %s -n 150 --no-pager 2>&1 || true", baseName)
+	if out, err := RunLogCommand(ctx, fmt.Sprintf("systemctl is-active %s 2>/dev/null", shellEscape(baseName))); err == nil && strings.TrimSpace(out) == "active" {
+		return fmt.Sprintf("journalctl -u %s -n 150 --no-pager 2>&1 || true", shellEscape(baseName))
 	}
 
-	// Linux /proc stdout
-	if runtime.GOOS == "linux" {
-		pidCmd := fmt.Sprintf(`pgrep -f %s 2>/dev/null | head -1`, shellEscape(projectPath))
-		if pidOut, _ := RunLogCommand(ctx, pidCmd); strings.TrimSpace(pidOut) != "" {
-			pid := strings.TrimSpace(pidOut)
-			stdoutPath := fmt.Sprintf("/proc/%s/fd/1", pid)
-			if _, err := os.Stat(stdoutPath); err == nil {
-				return fmt.Sprintf("tail -n 150 /proc/%s/fd/1 2>/dev/null || true", pid)
-			}
-		}
-	}
-
-	switch projectType {
-	case "nextjs":
-		// Next.js trace and server log
-		return fmt.Sprintf(
-			`find %s -name "*.log" -newer %s/package.json -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/.next/cache/*" 2>/dev/null | head -3 | xargs tail -n 100 2>/dev/null; ps aux | grep -E "node.*next" | grep -v grep | awk '{print "PID "$2" CMD "$11" "$12" "$13}' 2>/dev/null || true`,
-			shellEscape(projectPath), shellEscape(projectPath),
-		)
-	case "nodejs":
-		return fmt.Sprintf(
-			`find %s -name "*.log" -newer %s/package.json -not -path "*/node_modules/*" 2>/dev/null | head -3 | xargs tail -n 100 2>/dev/null; ps aux | grep -E "node.*%s" | grep -v grep | head -3 2>/dev/null || true`,
-			shellEscape(projectPath), shellEscape(projectPath), baseName,
-		)
-	case "python":
-		return fmt.Sprintf(
-			`find %s -name "*.log" -not -path "*/__pycache__/*" 2>/dev/null | head -3 | xargs tail -n 100 2>/dev/null; ps aux | grep -E "python.*%s" | grep -v grep | head -3 2>/dev/null || true`,
-			shellEscape(projectPath), baseName,
-		)
-	case "go":
-		return fmt.Sprintf(
-			`find %s -name "*.log" -not -path "*/.git/*" 2>/dev/null | head -3 | xargs tail -n 100 2>/dev/null; ps aux | grep -E "%s" | grep -v grep | head -3 2>/dev/null || true`,
-			shellEscape(projectPath), baseName,
-		)
-	case "ruby":
-		return fmt.Sprintf(
-			`tail -n 100 %s/log/development.log 2>/dev/null || tail -n 100 %s/log/production.log 2>/dev/null || true`,
-			shellEscape(projectPath), shellEscape(projectPath),
-		)
-	default:
-		return fmt.Sprintf(
-			`find %s -name "*.log" -not -path "*/.git/*" 2>/dev/null | head -5 | xargs tail -n 50 2>/dev/null || true`,
-			shellEscape(projectPath),
-		)
-	}
+	// Discovery already returns real log files. Process listings and framework
+	// traces are not application stdout and must never be displayed as logs.
+	return ""
 }
 
 // SystemLogCommand returns a shell command to get recent OS system health logs.

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Icon } from "@iconify/react";
-import { validateGithubRepoUrl } from "@/lib/github-url";
+import { validateGitRepoUrl, supportsGitHubPush } from "@/lib/git-url";
 import { validateTcpPort } from "@/lib/port-validator";
 
 interface PipelineItem {
@@ -116,9 +116,9 @@ export default function CicdPage() {
       return;
     }
 
-    const validation = validateGithubRepoUrl(repoUrl);
+    const validation = validateGitRepoUrl(repoUrl);
     if (!validation.valid) {
-      setRepoUrlError(validation.error || "Please enter a valid GitHub repository URL");
+      setRepoUrlError(validation.error || "Please enter a valid HTTPS Git repository URL");
       return;
     }
     setRepoUrlError(null);
@@ -175,7 +175,7 @@ export default function CicdPage() {
         <div>
           <h1 className="font-jersey text-3xl text-white tracking-wide">CI/CD Pipelines</h1>
           <p className="text-xs text-white/50 mt-1 font-normal">
-            Continuous integration & automated Docker deployment pipelines triggered on GitHub commits.
+            Build and deploy from Git repositories. GitHub supports push triggers; external Git sources can run on demand.
           </p>
         </div>
         <button
@@ -272,7 +272,7 @@ export default function CicdPage() {
           </div>
           <p className="font-sans font-bold text-sm text-white mb-1">No CI/CD pipelines configured</p>
           <p className="text-xs text-white/40 max-w-sm mb-4">
-            Link a GitHub repository to build and deploy Docker containers automatically whenever commits are pushed.
+            Start from Git sources to review project setup, then run your deployment pipeline.
           </p>
           <button
             onClick={openCreateModal}
@@ -417,7 +417,7 @@ export default function CicdPage() {
           <div className="w-full max-w-md rounded-2xl p-6 bg-[#0c0c0c] border border-white/[0.12] shadow-2xl">
             <h2 className="font-jersey text-2xl text-white tracking-wide mb-1">New CI/CD Pipeline</h2>
             <p className="text-xs text-white/50 mb-5 font-normal">
-              Connect a GitHub repository to trigger automated container builds and deployments.
+              Connect an HTTPS Git repository. Save private access credentials in Settings → Git sources.
             </p>
 
             <form onSubmit={handleCreate} className="flex flex-col gap-4">
@@ -438,7 +438,7 @@ export default function CicdPage() {
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-[11px] font-bold text-white/50 uppercase tracking-wider">
-                    GitHub Repository URL
+                    Git Repository URL
                   </label>
                   <span className="text-[10px] text-white/30 font-mono">https://github.com/owner/repo</span>
                 </div>
@@ -453,9 +453,9 @@ export default function CicdPage() {
                   }}
                   onBlur={() => {
                     if (repoUrl.trim()) {
-                      const v = validateGithubRepoUrl(repoUrl);
+                      const v = validateGitRepoUrl(repoUrl);
                       if (!v.valid) {
-                        setRepoUrlError(v.error || "Invalid GitHub repository URL");
+                        setRepoUrlError(v.error || "Invalid HTTPS Git repository URL");
                       } else {
                         setRepoUrlError(null);
                       }
@@ -530,12 +530,13 @@ export default function CicdPage() {
                 <input
                   type="checkbox"
                   id="autoDeployCheckbox"
-                  checked={autoDeploy}
+                  checked={autoDeploy && supportsGitHubPush(repoUrl)}
+                  disabled={!supportsGitHubPush(repoUrl)}
                   onChange={(e) => setAutoDeploy(e.target.checked)}
                   className="rounded bg-[#141414] border-white/20 text-white focus:ring-0 cursor-pointer"
                 />
                 <label htmlFor="autoDeployCheckbox" className="text-xs text-white/80 cursor-pointer select-none">
-                  Enable automated webhook deployment on <code className="text-[11px] text-white">git push</code>
+                  Enable GitHub webhook deployment on <code className="text-[11px] text-white">git push</code>
                 </label>
               </div>
 

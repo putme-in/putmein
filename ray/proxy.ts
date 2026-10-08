@@ -40,20 +40,20 @@ export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const hostHeader = request.headers.get("host") || "";
 
+  const isDashboard = isDashboardHost(hostHeader);
+
   // 1. Bypass internal Next.js assets and proxy resolution paths
-  if (
+  if (isDashboard && (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/domains/resolve") ||
     pathname.startsWith("/api/domain-proxy") ||
     pathname === "/domain-not-found" ||
     pathname === "/favicon.ico"
-  ) {
+  )) {
     return NextResponse.next();
   }
 
   // 2. Determine if request is hitting the Ray Dashboard directly (localhost or direct IP)
-  const isDashboard = isDashboardHost(hostHeader);
-
   if (isDashboard) {
     // Redirect decommissioned register page to login
     if (pathname === "/register" || pathname.startsWith("/register/")) {
@@ -102,7 +102,7 @@ export async function proxy(request: NextRequest) {
 
   // 3. Domain Routing: Inbound request via sslip.io or custom domain
   try {
-    const resolveUrl = new URL(`/api/domains/resolve?host=${encodeURIComponent(hostHeader)}`, request.url);
+    const resolveUrl = new URL(`/api/domains/resolve?host=${encodeURIComponent(hostHeader)}`, process.env.RAY_INTERNAL_URL || "http://127.0.0.1:3000");
     const res = await fetch(resolveUrl, {
       signal: AbortSignal.timeout(1500),
     });
@@ -138,10 +138,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    /*
-     * Match all request paths except for static files and favicon
-     */
-    "/((?!_next/static|_next/image|favicon.ico).*)",
-  ],
+  matcher: ["/:path*"],
 };

@@ -35,10 +35,7 @@ export async function POST(req: NextRequest) {
     const existing = await prisma.rayMonitorProject.findFirst({
       where: {
         userId,
-        OR: [
-          { projectPath },
-          { name: name.trim() },
-        ],
+        ...(body.id ? { id: body.id } : { OR: [{ projectPath }, { name: name.trim() }] }),
       },
     });
 
@@ -49,7 +46,8 @@ export async function POST(req: NextRequest) {
           name: name.trim(),
           projectPath,
           logPaths: JSON.stringify(logPaths),
-          logCommand: logCommand || existing.logCommand,
+          logCommand: body.managedLogFile || logPaths.some((value: string) => value.startsWith("docker:")) ? null : logCommand || existing.logCommand,
+          ...(body.managedLogFile ? { managedPid: body.managedPid || null, managedLogFile: body.managedLogFile, runCommand: body.runCommand || null } : logPaths.some((value: string) => value.startsWith("docker:")) ? { managedPid: null, managedLogFile: null } : {}),
           intervalSec,
           status,
           enabled: true,
@@ -69,6 +67,8 @@ export async function POST(req: NextRequest) {
     const project = await prisma.rayMonitorProject.create({
       data: {
         userId,
+        ...(body.id ? { id: body.id } : {}),
+        ...(body.managedLogFile ? { managedPid: body.managedPid || null, managedLogFile: body.managedLogFile, runCommand: body.runCommand || null } : logPaths.some((value: string) => value.startsWith("docker:")) ? { managedPid: null, managedLogFile: null } : {}),
         name: name.trim(),
         projectPath,
         logPaths: JSON.stringify(logPaths),

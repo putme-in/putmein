@@ -20,6 +20,7 @@ import (
 
 	"brain/server/internal/agent"
 	"brain/server/internal/monitor"
+	"brain/server/internal/security"
 )
 
 // DeployStep represents the current stage of deployment.
@@ -38,42 +39,71 @@ const (
 
 // DeployStepEvent is sent over SSE during the deployment process.
 type DeployStepEvent struct {
-	Step      DeployStep `json:"step"`
-	Status    string     `json:"status"` // "pending" | "running" | "success" | "error"
-	Message   string     `json:"message"`
-	LogDelta  string     `json:"logDelta,omitempty"`
-	Port      int        `json:"port,omitempty"`
-	URL       string     `json:"url,omitempty"`
-	Container string     `json:"container,omitempty"`
+	ActiveDeploymentID string `json:"activeDeploymentId,omitempty"`
+	RuntimeRestored    bool   `json:"runtimeRestored,omitempty"`
+	SecurityOverridden bool   `json:"securityOverridden,omitempty"`
+	SecurityStatus     string `json:"securityStatus,omitempty"`
+	ScanID             string `json:"scanId,omitempty"`
+
+	Runtime       string     `json:"runtime,omitempty"`
+	ManagedPID    int        `json:"managedPid,omitempty"`
+	LogFile       string     `json:"logFile,omitempty"`
+	ProjectPath   string     `json:"projectPath,omitempty"`
+	ContainerPort int        `json:"containerPort,omitempty"`
+	Step          DeployStep `json:"step"`
+	Status        string     `json:"status"` // "pending" | "running" | "success" | "error"
+	Message       string     `json:"message"`
+	LogDelta      string     `json:"logDelta,omitempty"`
+	Port          int        `json:"port,omitempty"`
+	URL           string     `json:"url,omitempty"`
+	Container     string     `json:"container,omitempty"`
 }
 
 // DeployRequest holds input configuration for a container deployment.
 type DeployRequest struct {
-	ID          string            `json:"id"`
-	UserID      string            `json:"userId"`
-	Name        string            `json:"name"`
-	ProjectPath string            `json:"projectPath"`
-	SourceType  string            `json:"sourceType"` // "upload" | "github" | "local"
-	RepoURL     string            `json:"repoUrl,omitempty"`
-	Branch      string            `json:"branch,omitempty"`
-	GitHubToken string            `json:"githubToken,omitempty"`
-	EnvVars     map[string]string `json:"envVars,omitempty"`
-	HostPort    int               `json:"hostPort,omitempty"`
+	SourceReference  string      `json:"sourceReference,omitempty"`
+	HealthCheck      HealthCheck `json:"healthCheck"`
+	RoutingMode      string      `json:"routingMode,omitempty"`
+	ProjectURL       string      `json:"projectUrl,omitempty"`
+	SecurityOverride string      `json:"securityOverride,omitempty"`
+	skipBuild        bool
+	sourcePrepared   bool
+
+	DockerEnabled   *bool             `json:"dockerEnabled,omitempty"`
+	ProjectID       string            `json:"projectId,omitempty"`
+	PreviousRuntime string            `json:"previousRuntime,omitempty"`
+	Framework       string            `json:"framework,omitempty"`
+	BuildCommand    string            `json:"buildCommand,omitempty"`
+	StartCommand    string            `json:"startCommand,omitempty"`
+	ContainerPort   int               `json:"containerPort,omitempty"`
+	ID              string            `json:"id"`
+	UserID          string            `json:"userId"`
+	Name            string            `json:"name"`
+	ProjectPath     string            `json:"projectPath"`
+	SourceType      string            `json:"sourceType"` // "upload" | "github" | "local"
+	RepoURL         string            `json:"repoUrl,omitempty"`
+	Branch          string            `json:"branch,omitempty"`
+	GitHubToken     string            `json:"githubToken,omitempty"`
+	EnvVars         map[string]string `json:"envVars,omitempty"`
+	HostPort        int               `json:"hostPort,omitempty"`
 }
 
 // DeployResult is returned when deployment completes.
 type DeployResult struct {
-	DeploymentID  string `json:"deploymentId"`
-	ProjectID     string `json:"projectId,omitempty"`
-	Name          string `json:"name"`
-	ContainerID   string `json:"containerId"`
-	ContainerName string `json:"containerName"`
-	ImageName     string `json:"imageName"`
-	HostPort      int    `json:"hostPort"`
-	ContainerPort int    `json:"containerPort"`
-	DeployURL     string `json:"deployUrl"`
-	Status        string `json:"status"`
-	BuildLogs     string `json:"buildLogs"`
+	Runtime        string `json:"runtime,omitempty"`
+	ManagedPID     int    `json:"managedPid,omitempty"`
+	ManagedLogFile string `json:"managedLogFile,omitempty"`
+	DeploymentID   string `json:"deploymentId"`
+	ProjectID      string `json:"projectId,omitempty"`
+	Name           string `json:"name"`
+	ContainerID    string `json:"containerId"`
+	ContainerName  string `json:"containerName"`
+	ImageName      string `json:"imageName"`
+	HostPort       int    `json:"hostPort"`
+	ContainerPort  int    `json:"containerPort"`
+	DeployURL      string `json:"deployUrl"`
+	Status         string `json:"status"`
+	BuildLogs      string `json:"buildLogs"`
 }
 
 // In-memory registry of active deployments
@@ -149,6 +179,13 @@ func GetUsedPortsMap() (map[int]string, error) {
 		claimed[p] = desc
 	}
 
+	if routes, err := readRoutes(); err == nil {
+		for _, route := range routes {
+			if route.Port > 0 {
+				claimed[route.Port] = "managed domain " + route.Host
+			}
+		}
+	}
 	// 1. In-memory monitored projects from monitor.Global (no HTTP call needed)
 	if monitor.Global != nil {
 		for _, p := range monitor.Global.ListProjects() {
@@ -277,175 +314,45 @@ func SanitizeContainerName(name string) string {
 	return "ray-" + res
 }
 
-// DetectAndGenerateDockerfile inspects the project directory and returns/writes a Dockerfile.
-func DetectAndGenerateDockerfile(projectPath string) (dockerfileContent string, containerPort int, err error) {
-	dockerfilePath := filepath.Join(projectPath, "Dockerfile")
-
-	// 1. If existing Dockerfile exists, read it
-	if data, readErr := os.ReadFile(dockerfilePath); readErr == nil && len(data) > 0 {
-		content := string(data)
-		// Fix invalid shell operators inside Dockerfile COPY directives if present
-		if strings.Contains(content, "2>/dev/null || true") || strings.Contains(content, "|| true") {
-			content = strings.ReplaceAll(content, "COPY --from=builder /app/public ./public 2>/dev/null || true", "COPY --from=builder /app/public ./public")
-			content = strings.ReplaceAll(content, "COPY --from=builder /app/public ./public || true", "COPY --from=builder /app/public ./public")
-			if !strings.Contains(content, "mkdir -p /app/public") {
-				content = strings.Replace(content, "COPY . .", "COPY . .\nRUN mkdir -p /app/public", 1)
-			}
-			_ = os.WriteFile(dockerfilePath, []byte(content), 0644)
-		}
-
-		port := 3000
-		for _, line := range strings.Split(content, "\n") {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(strings.ToUpper(line), "EXPOSE") {
-				parts := strings.Fields(line)
-				if len(parts) > 1 {
-					if p, pErr := strconv.Atoi(parts[1]); pErr == nil && p > 0 {
-						port = p
-					}
-				}
-			}
-		}
-		return content, port, nil
-	}
-
-	// 2. Next.js App
-	if fileExists(filepath.Join(projectPath, "next.config.js")) ||
-		fileExists(filepath.Join(projectPath, "next.config.ts")) ||
-		fileExists(filepath.Join(projectPath, "next.config.mjs")) {
-		dockerfileContent = `FROM node:20-alpine AS builder
-WORKDIR /app
-ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_ENV=development
-
-COPY package*.json ./
-RUN npm install
-
-COPY . .
-RUN mkdir -p /app/public
-ENV NODE_ENV=production
-ENV DATABASE_URL="mysql://root:password@localhost:3306/dummy"
-RUN npm run build || npx next build
-
-FROM node:20-alpine AS runner
-WORKDIR /app
-ENV NODE_ENV=production
-ENV PORT=3000
-ENV NEXT_TELEMETRY_DISABLED=1
-
-COPY package*.json ./
-RUN npm install --omit=dev || npm ci --only=production || true
-
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/node_modules ./node_modules
-
-EXPOSE 3000
-CMD ["npm", "start"]
-`
-		containerPort = 3000
-	} else if fileExists(filepath.Join(projectPath, "package.json")) {
-		// 3. General Node.js / Vite / Express
-		pkgData, _ := os.ReadFile(filepath.Join(projectPath, "package.json"))
-		pkgStr := string(pkgData)
-
-		if strings.Contains(pkgStr, `"vite"`) || strings.Contains(pkgStr, `"react-scripts"`) {
-			dockerfileContent = `FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci || npm install
-COPY . .
-RUN npm run build || true
-RUN mkdir -p /app/dist && if [ -d /app/build ]; then cp -r /app/build/* /app/dist/ 2>/dev/null || true; fi
-
-FROM node:20-alpine
-WORKDIR /app
-RUN npm install -g serve
-COPY --from=builder /app/dist ./dist
-EXPOSE 3000
-CMD ["serve", "-s", "dist", "-l", "3000"]
-`
-			containerPort = 3000
-		} else {
-			dockerfileContent = `FROM node:20-alpine
-WORKDIR /app
-ENV NODE_ENV=production
-ENV PORT=3000
-
-COPY package*.json ./
-RUN npm ci --only=production || npm install
-
-COPY . .
-EXPOSE 3000
-CMD ["npm", "start"]
-`
-			containerPort = 3000
-		}
-	} else if fileExists(filepath.Join(projectPath, "requirements.txt")) ||
-		fileExists(filepath.Join(projectPath, "Pipfile")) ||
-		fileExists(filepath.Join(projectPath, "pyproject.toml")) {
-		// 4. Python
-		dockerfileContent = `FROM python:3.11-slim
-WORKDIR /app
-ENV PYTHONUNBUFFERED=1
-ENV PORT=8000
-
-COPY requirements.txt* ./
-RUN if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi
-
-COPY . .
-EXPOSE 8000
-CMD ["python", "app.py"]
-`
-		containerPort = 8000
-	} else if fileExists(filepath.Join(projectPath, "go.mod")) {
-		// 5. Go
-		dockerfileContent = `FROM golang:1.22-alpine AS builder
-WORKDIR /app
-COPY go.mod go.sum* ./
-RUN go mod download || true
-COPY . .
-RUN CGO_ENABLED=0 go build -o /app/server .
-
-FROM alpine:latest
-WORKDIR /app
-COPY --from=builder /app/server ./server
-EXPOSE 8080
-CMD ["./server"]
-`
-		containerPort = 8080
-	} else {
-		// 6. Static HTML
-		dockerfileContent = `FROM nginx:alpine
-COPY . /usr/share/nginx/html
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
-`
-		containerPort = 80
-	}
-
-	// Write generated Dockerfile to project
-	_ = os.WriteFile(dockerfilePath, []byte(dockerfileContent), 0644)
-
-	// Write .dockerignore if not present
-	dockerignorePath := filepath.Join(projectPath, ".dockerignore")
-	if !fileExists(dockerignorePath) {
-		_ = os.WriteFile(dockerignorePath, []byte("node_modules\n.git\n.next\n__pycache__\ndist\n.env.local\n"), 0644)
-	}
-
-	return dockerfileContent, containerPort, nil
-}
-
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
 
 // ExecuteDeployment runs the complete containerized deployment workflow.
-func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployStepEvent)) (*DeployResult, error) {
+func executeDeployment(ctx context.Context, req DeployRequest, emit func(DeployStepEvent)) (deploymentResult *DeployResult, deploymentErr error) {
+	hostMode := req.DockerEnabled != nil && !*req.DockerEnabled
+	if req.PreviousRuntime != "" && strings.HasPrefix(req.PreviousRuntime, hostPrefix) != hostMode {
+		running := false
+		if strings.HasPrefix(req.PreviousRuntime, hostPrefix) {
+			state, err := readHostState(req.PreviousRuntime)
+			if err != nil && !os.IsNotExist(err) {
+				return nil, err
+			}
+			running = state != nil && hostProcessAlive(state.PID, state.Marker)
+		} else {
+			out, err := dockerCmd(ctx, "inspect", "--format", "{{.State.Running}}", req.PreviousRuntime).Output()
+			if err == nil {
+				running = strings.TrimSpace(string(out)) == "true"
+			}
+		}
+		if running {
+			return nil, fmt.Errorf("stop the current deployment before switching between Docker and host execution")
+		}
+	}
+	if hostMode {
+		return executeHostDeployment(ctx, req, emit)
+	}
+	if req.ContainerPort < 0 || req.ContainerPort > 65535 || req.HostPort < 0 || req.HostPort > 65535 {
+		return nil, fmt.Errorf("ports must be between 1 and 65535, or omitted for automatic allocation")
+	}
 	containerName := SanitizeContainerName(req.Name)
-	imageName := fmt.Sprintf("%s:latest", containerName)
+	imageName := fmt.Sprintf("%s:release-%d", containerName, time.Now().UnixNano())
+	defer func() {
+		if deploymentErr != nil {
+			_ = recordArtifact(req, &DeployResult{ContainerName: containerName, ImageName: imageName}, "failed")
+		}
+	}()
 
 	// Resolve project path against configured base deployments directory
 	resolvedPath := req.ProjectPath
@@ -463,86 +370,6 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 		}
 	}
 	req.ProjectPath = resolvedPath
-
-	// ── STEP 0: Automatic Git Clone / Pull (if repository configured) ──
-	if req.RepoURL != "" || req.SourceType == "github" {
-		branch := strings.TrimSpace(req.Branch)
-		if branch == "" {
-			branch = "main"
-		}
-
-		cloneURL := strings.TrimSpace(req.RepoURL)
-		if cloneURL != "" {
-			if req.GitHubToken != "" && strings.Contains(cloneURL, "github.com/") && !strings.Contains(cloneURL, "@") {
-				cloneURL = strings.Replace(cloneURL, "https://github.com/", fmt.Sprintf("https://x-access-token:%s@github.com/", req.GitHubToken), 1)
-			}
-
-			gitDir := filepath.Join(req.ProjectPath, ".git")
-			if _, err := os.Stat(gitDir); os.IsNotExist(err) {
-				// Local directory does not exist or is not a git repo: perform fresh clone
-				emit(DeployStepEvent{
-					Step:    StepSourceCheck,
-					Status:  "running",
-					Message: fmt.Sprintf("Cloning repository %s (branch: %s)...", req.Name, branch),
-				})
-
-				_ = os.MkdirAll(filepath.Dir(req.ProjectPath), 0755)
-				if _, err := os.Stat(req.ProjectPath); err == nil {
-					// Clean up empty/stale non-git directory
-					_ = os.RemoveAll(req.ProjectPath)
-				}
-
-				cloneCmd := exec.CommandContext(ctx, "git", "clone", "-b", branch, "--single-branch", cloneURL, req.ProjectPath)
-				cloneCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=")
-				var cloneOut bytes.Buffer
-				cloneCmd.Stdout = &cloneOut
-				cloneCmd.Stderr = &cloneOut
-
-				if err := cloneCmd.Run(); err != nil {
-					// Fallback: try clone default branch without -b if specified branch failed
-					fallbackCmd := exec.CommandContext(ctx, "git", "clone", cloneURL, req.ProjectPath)
-					fallbackCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=")
-					var fallbackOut bytes.Buffer
-					fallbackCmd.Stdout = &fallbackOut
-					fallbackCmd.Stderr = &fallbackOut
-					if errFallback := fallbackCmd.Run(); errFallback != nil {
-						emit(DeployStepEvent{
-							Step:     StepSourceCheck,
-							Status:   "error",
-							Message:  fmt.Sprintf("Failed to clone repository: %v", err),
-							LogDelta: cloneOut.String() + "\n" + fallbackOut.String(),
-						})
-						return nil, fmt.Errorf("failed to clone repository %s: %v", req.RepoURL, err)
-					}
-				}
-
-				emit(DeployStepEvent{
-					Step:    StepSourceCheck,
-					Status:  "running",
-					Message: fmt.Sprintf("Repository cloned successfully into %s", req.ProjectPath),
-				})
-			} else {
-				// Local repo exists: fetch & sync branch
-				emit(DeployStepEvent{
-					Step:    StepSourceCheck,
-					Status:  "running",
-					Message: fmt.Sprintf("Syncing latest commits for %s (branch: %s)...", req.Name, branch),
-				})
-
-				fetchCmd := exec.CommandContext(ctx, "git", "-C", req.ProjectPath, "fetch", cloneURL, branch)
-				fetchCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=")
-				if _, err := fetchCmd.CombinedOutput(); err == nil {
-					checkoutCmd := exec.CommandContext(ctx, "git", "-C", req.ProjectPath, "checkout", branch)
-					checkoutCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=")
-					_ = checkoutCmd.Run()
-
-					resetCmd := exec.CommandContext(ctx, "git", "-C", req.ProjectPath, "reset", "--hard", "FETCH_HEAD")
-					resetCmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=")
-					_ = resetCmd.Run()
-				}
-			}
-		}
-	}
 
 	// ── STEP 1: Source Validation ──
 	emit(DeployStepEvent{
@@ -573,7 +400,7 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 		Message: "Analyzing framework & generating optimized container spec",
 	})
 
-	dockerfileContent, containerPort, err := DetectAndGenerateDockerfile(req.ProjectPath)
+	dockerfileContent, containerPort, err := DetectAndGenerateDockerfile(req.ProjectPath, req)
 	if err != nil {
 		emit(DeployStepEvent{
 			Step:    StepDockerize,
@@ -581,6 +408,14 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 			Message: fmt.Sprintf("Failed to generate Dockerfile: %v", err),
 		})
 		return nil, err
+	}
+
+	if req.ContainerPort > 0 {
+		containerPort = req.ContainerPort
+	}
+
+	if value, ok := req.EnvVars["PORT"]; ok && value != strconv.Itoa(containerPort) {
+		return nil, fmt.Errorf("PORT must match the configured application port %d", containerPort)
 	}
 
 	emit(DeployStepEvent{
@@ -597,7 +432,7 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 		Message: fmt.Sprintf("Building Docker image '%s'...", imageName),
 	})
 
-	buildCmd := dockerCmd(ctx, "build", "-t", imageName, ".")
+	buildCmd := dockerCmd(ctx, "build", "--label", "io.ray.owner="+req.UserID, "--label", "io.ray.project="+securityIdentity(req), "-t", imageName, ".")
 	buildCmd.Dir = req.ProjectPath
 
 	stdout, err := buildCmd.StdoutPipe()
@@ -650,6 +485,35 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 		Message: fmt.Sprintf("Docker image '%s' built successfully", imageName),
 	})
 
+	runImage := imageName
+	if agent.IsSecurityChecksEnabled() {
+		policy, policyErr := security.LoadAdvancedConfig()
+		if policyErr != nil {
+			return nil, policyErr
+		}
+		if policy.Images {
+			imageID, inspectErr := dockerCmd(ctx, "image", "inspect", "--format", "{{.Id}}", imageName).Output()
+			report := &security.SecurityReport{ID: fmt.Sprintf("scan_%d", time.Now().UnixNano()), ProjectID: securityIdentity(req), ProjectName: req.Name, Trigger: "image_gate", Status: "passed", CreatedAt: time.Now(), Findings: []security.FindingItem{}}
+			scanErr := inspectErr
+			if scanErr == nil {
+				scanErr = security.ScanImage(ctx, strings.TrimSpace(string(imageID)), report)
+			}
+			if scanErr != nil {
+				report.Status = "error"
+				report.Summary = "Image scan incomplete"
+				report.Logs = scanErr.Error()
+			}
+			if err := persistSecurityReport(ctx, req, report); err != nil {
+				return nil, err
+			}
+			emit(DeployStepEvent{Step: "security", Status: "running", SecurityStatus: report.Status, ScanID: report.ID, Message: report.Summary})
+			if report.Status == "error" || report.Status == "danger" {
+				return nil, fmt.Errorf("image security gate blocked deployment; review scan %s", report.ID)
+			}
+			runImage = strings.TrimSpace(string(imageID))
+		}
+	}
+
 	// ── STEP 4: Container Launch ──
 	emit(DeployStepEvent{
 		Step:    StepLaunching,
@@ -657,39 +521,82 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 		Message: "Allocating host port & starting container...",
 	})
 
-	// Clean up any existing container with the same name
-	_ = dockerCmd(nil, "rm", "-f", containerName).Run()
-
-	resolvedPort, pErr := FindGuaranteedFreePort(req.HostPort, req.Name)
+	// Resolve conflicts before stopping the previous application. An occupied
+	// requested port is reusable only if this exact container currently publishes it.
+	hostPort, pErr := selectDeploymentPort(ctx, req.HostPort, req.Name, containerName)
 	if pErr != nil {
-		emit(DeployStepEvent{
-			Step:    StepLaunching,
-			Status:  "error",
-			Message: fmt.Sprintf("Port allocation failed: %v", pErr),
-		})
 		return nil, pErr
 	}
-	if req.HostPort > 0 && resolvedPort != req.HostPort {
-		emit(DeployStepEvent{
-			Step:    StepLaunching,
-			Status:  "running",
-			Message: fmt.Sprintf("Requested port :%d is occupied by another project. Reallocated guaranteed free port :%d (0 collisions)", req.HostPort, resolvedPort),
-		})
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	hostPort := resolvedPort
+	transaction, err := beginDockerReplacement(ctx, req, containerName, imageName)
+	if err != nil {
+		return nil, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			restoreCtx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+			defer cancel()
+			if restoreErr := transaction.restore(restoreCtx); restoreErr != nil {
+				deploymentErr = fmt.Errorf("%v; rollback incomplete: %w", deploymentErr, restoreErr)
+				emit(DeployStepEvent{Step: "rollback", Status: "error", Message: restoreErr.Error()})
+			} else {
+				message := "Failed candidate removed"
+				if transaction.PreviousID != "" {
+					message = "Previous container restored"
+				}
+				event := DeployStepEvent{Step: "rollback", Status: "success", Message: message}
+				if transaction.Previous != nil && transaction.WasRunning {
+					previous := transaction.Previous
+					event.RuntimeRestored = true
+					event.ActiveDeploymentID = previous.Request.ID
+					event.Port = previous.Result.HostPort
+					event.URL = previous.Result.DeployURL
+					event.Container = previous.Result.ContainerName
+					event.ProjectPath = previous.Request.ProjectPath
+				}
+				emit(event)
+				deploymentErr = fmt.Errorf("%v; %s", deploymentErr, message)
+			}
+		}
+	}()
+	if err = transaction.stopPrevious(ctx); err != nil {
+		return nil, err
+	}
 
+	if !isSocketFree(hostPort) {
+		return nil, fmt.Errorf("host port %d became unavailable during replacement", hostPort)
+	}
+
+	portBinding := fmt.Sprintf("%d:%d", hostPort, containerPort)
+	if req.RoutingMode == "https" {
+		portBinding = "127.0.0.1:" + portBinding
+	}
 	runArgs := []string{
 		"run", "-d",
 		"--name", containerName,
-		"-p", fmt.Sprintf("%d:%d", hostPort, containerPort),
+		"--init",
+		"--label", "io.ray.owner=" + req.UserID,
+		"--label", "io.ray.project=" + securityIdentity(req),
+		"--log-driver", "json-file", "--log-opt", "max-size=10m", "--log-opt", "max-file=3",
+		"-p", portBinding,
 		"--restart", "unless-stopped",
 	}
 
+	runArgs = append(runArgs, "-e", fmt.Sprintf("PORT=%d", containerPort))
 	// Add environment variables if provided
 	for k, v := range req.EnvVars {
 		runArgs = append(runArgs, "-e", fmt.Sprintf("%s=%s", k, v))
 	}
-	runArgs = append(runArgs, imageName)
+	if req.StartCommand != "" {
+		runArgs = append(runArgs, "--entrypoint", "/bin/sh")
+	}
+	runArgs = append(runArgs, runImage)
+	if req.StartCommand != "" {
+		runArgs = append(runArgs, "-c", req.StartCommand)
+	}
 
 	runOut, err := dockerCmd(ctx, runArgs...).CombinedOutput()
 	if err != nil {
@@ -709,28 +616,8 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 	}
 
 	containerID := strings.TrimSpace(string(runOut))
-	if len(containerID) > 12 {
-		containerID = containerID[:12]
-	}
 
-	deployURL := fmt.Sprintf("http://localhost:%d", hostPort)
-	if agent.GetRoutingMode() == "domain" {
-		cleanName := strings.ToLower(regexp.MustCompile(`[^a-zA-Z0-9-]`).ReplaceAllString(req.Name, "-"))
-		cleanName = strings.Trim(cleanName, "-")
-		if cleanName == "" {
-			cleanName = "app"
-		}
-		if agent.GetDomainProvider() == "custom" && agent.GetCustomRootDomain() != "" {
-			deployURL = fmt.Sprintf("http://%s.%s", cleanName, agent.GetCustomRootDomain())
-		} else {
-			// sslip.io mode
-			hostIP := "127.0.0.1"
-			if out, err := exec.Command("curl", "-s", "--max-time", "2", "https://api.ipify.org").Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
-				hostIP = strings.TrimSpace(string(out))
-			}
-			deployURL = fmt.Sprintf("http://%s.%s.sslip.io", cleanName, hostIP)
-		}
-	}
+	deployURL := directURL(hostPort)
 
 	emit(DeployStepEvent{
 		Step:      StepLaunching,
@@ -748,33 +635,18 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 		Message: fmt.Sprintf("Waiting for container on port :%d to become healthy...", hostPort),
 	})
 
-	client := &http.Client{Timeout: 2 * time.Second}
-	healthy := false
-	localCheckURL := fmt.Sprintf("http://localhost:%d", hostPort)
-	for i := 0; i < 15; i++ {
-		time.Sleep(1 * time.Second)
-		resp, hErr := client.Get(localCheckURL)
-		if hErr == nil {
-			_ = resp.Body.Close()
-			healthy = true
-			break
-		}
+	healthHost, _ := routingHost(req)
+	if err := waitForHealth(ctx, hostPort, req.HealthCheck, nil, healthHost); err != nil {
+		return nil, err
 	}
+	emit(DeployStepEvent{Step: StepHealthcheck, Status: "success", Message: "Application passed its configured health check", URL: deployURL})
 
-	if healthy {
-		emit(DeployStepEvent{
-			Step:    StepHealthcheck,
-			Status:  "success",
-			Message: fmt.Sprintf("Service is healthy & responding at %s (internal port :%d)", deployURL, hostPort),
-			URL:     deployURL,
-		})
-	} else {
-		emit(DeployStepEvent{
-			Step:    StepHealthcheck,
-			Status:  "running",
-			Message: fmt.Sprintf("Container started (healthcheck timed out on port :%d, but container is running)", hostPort),
-			URL:     deployURL,
-		})
+	deployURL, err = applyRouting(ctx, req, hostPort, containerName)
+	if err != nil {
+		return nil, fmt.Errorf("application started but routing failed: %w", err)
+	}
+	if req.RoutingMode == "https" {
+		emit(DeployStepEvent{Step: StepHealthcheck, Status: "success", Message: "HTTPS route configured. Certificate issuance depends on DNS and public access to ports 80/443.", URL: deployURL})
 	}
 
 	// ── STEP 6: 24/7 Monitor Auto-Registration ──
@@ -784,7 +656,7 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 		Message: "Registering container into 24/7 AI log monitor...",
 	})
 
-	if err := monitor.AddProjectFromChat(req.UserID, req.Name, req.ProjectPath, 30); err != nil {
+	if err := monitor.AddContainerProject(req.UserID, req.Name, req.ProjectPath, containerName, 30, req.ProjectID); err != nil {
 		emit(DeployStepEvent{
 			Step:    StepMonitor,
 			Status:  "running",
@@ -812,6 +684,11 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 		BuildLogs:     buildLogs.String(),
 	}
 
+	if err = transaction.commit(result); err != nil {
+		return nil, fmt.Errorf("could not commit release state: %w", err)
+	}
+	committed = true
+
 	deployMu.Lock()
 	deployments[containerName] = result
 	deployMu.Unlock()
@@ -820,12 +697,14 @@ func ExecuteDeployment(ctx context.Context, req DeployRequest, emit func(DeployS
 	SaveDeploymentViaRayAPI(result, req)
 
 	emit(DeployStepEvent{
-		Step:      StepComplete,
-		Status:    "success",
-		Message:   fmt.Sprintf("Application successfully deployed at %s", deployURL),
-		Port:      hostPort,
-		URL:       deployURL,
-		Container: containerName,
+		ProjectPath:   req.ProjectPath,
+		ContainerPort: containerPort,
+		Step:          StepComplete,
+		Status:        "success",
+		Message:       fmt.Sprintf("Application successfully deployed at %s", deployURL),
+		Port:          hostPort,
+		URL:           deployURL,
+		Container:     containerName,
 	})
 
 	return result, nil
@@ -844,21 +723,25 @@ func SaveDeploymentViaRayAPI(res *DeployResult, req DeployRequest) {
 	}
 
 	payload, err := json.Marshal(map[string]any{
-		"id":            req.ID,
-		"userId":        req.UserID,
-		"name":          res.Name,
-		"projectPath":   req.ProjectPath,
-		"containerName": res.ContainerName,
-		"containerId":   res.ContainerID,
-		"imageName":     res.ImageName,
-		"hostPort":      res.HostPort,
-		"containerPort": res.ContainerPort,
-		"deployUrl":     res.DeployURL,
-		"status":        res.Status,
-		"buildLogs":     res.BuildLogs,
-		"sourceType":    req.SourceType,
-		"repoUrl":       req.RepoURL,
-		"branch":        req.Branch,
+		"id":             req.ID,
+		"projectId":      req.ProjectID,
+		"runtime":        res.Runtime,
+		"managedPid":     res.ManagedPID,
+		"managedLogFile": res.ManagedLogFile,
+		"userId":         req.UserID,
+		"name":           res.Name,
+		"projectPath":    req.ProjectPath,
+		"containerName":  res.ContainerName,
+		"containerId":    res.ContainerID,
+		"imageName":      res.ImageName,
+		"hostPort":       res.HostPort,
+		"containerPort":  res.ContainerPort,
+		"deployUrl":      res.DeployURL,
+		"status":         res.Status,
+		"buildLogs":      res.BuildLogs,
+		"sourceType":     req.SourceType,
+		"repoUrl":        req.RepoURL,
+		"branch":         req.Branch,
 	})
 	if err != nil {
 		return
@@ -923,6 +806,9 @@ func dockerCmd(ctx context.Context, args ...string) *exec.Cmd {
 
 // GetContainerLogs returns recent logs from the docker container.
 func GetContainerLogs(containerName string, lines int) (string, error) {
+	if strings.HasPrefix(containerName, hostPrefix) {
+		return HostRuntimeLogs(containerName, lines)
+	}
 	if lines <= 0 {
 		lines = 200
 	}
@@ -936,12 +822,56 @@ func GetContainerLogs(containerName string, lines int) (string, error) {
 
 // StopContainer stops and removes a container.
 func StopContainer(containerName string) error {
+	cancelActiveRuntime(containerName)
+	if strings.HasPrefix(containerName, hostPrefix) {
+		return StopHostRuntime(containerName)
+	}
+	if err := removeRuntimeRoute(containerName); err != nil {
+		return err
+	}
 	cmd := dockerCmd(nil, "rm", "-f", containerName)
 	return cmd.Run()
 }
 
 // RestartContainer restarts a container.
 func RestartContainer(containerName string) error {
+	if strings.HasPrefix(containerName, hostPrefix) {
+		return RestartHostRuntime(containerName)
+	}
 	cmd := dockerCmd(nil, "restart", containerName)
 	return cmd.Run()
+}
+
+func selectDeploymentPort(ctx context.Context, preferred int, name, container string) (int, error) {
+	if preferred == 0 {
+		return FindGuaranteedFreePort(0, name)
+	}
+	if preferred < 1 || preferred > 65535 {
+		return 0, fmt.Errorf("invalid host port")
+	}
+	if _, reserved := ReservedPorts[preferred]; reserved || preferred == 4500 || preferred == 4567 {
+		return 0, fmt.Errorf("host port %d is reserved", preferred)
+	}
+	if err := ensureRoutePortAvailable(preferred, container); err != nil {
+		return 0, err
+	}
+	if isSocketFree(preferred) {
+		return preferred, nil
+	}
+	raw, err := dockerCmd(ctx, "inspect", "--format", "{{json .NetworkSettings.Ports}}", container).Output()
+	if err == nil {
+		var bindings map[string][]struct {
+			HostPort string `json:"HostPort"`
+		}
+		if json.Unmarshal(raw, &bindings) == nil {
+			for _, ports := range bindings {
+				for _, port := range ports {
+					if port.HostPort == strconv.Itoa(preferred) {
+						return preferred, nil
+					}
+				}
+			}
+		}
+	}
+	return 0, fmt.Errorf("requested host port %d is occupied; choose another port or automatic allocation", preferred)
 }

@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
         latestPerProject.set(pKey, scan);
         if (scan.status === "danger") totalDanger++;
         else if (scan.status === "warning") totalWarn++;
-        else totalClean++;
+        else if (scan.status === "passed") totalClean++;
       }
     }
 

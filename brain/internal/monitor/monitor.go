@@ -20,9 +20,10 @@ var alertResponseRe = regexp.MustCompile(`(?i)^ALERT:\s*(info|warn|error|critica
 
 // Service manages all monitored projects and their polling goroutines.
 type Service struct {
-	mu       sync.RWMutex
-	projects map[string]*projectState // keyed by project ID
-	broker   *Broker
+	lifecycleContext context.Context
+	mu               sync.RWMutex
+	projects         map[string]*projectState // keyed by project ID
+	broker           *Broker
 
 	// persistAlert is called when a new alert is detected.
 	// It should persist the alert to the database and return its DB id.
@@ -51,9 +52,11 @@ type Service struct {
 }
 
 type projectState struct {
-	project *Project
-	offsets map[string]int64 // file path → current read offset
-	cancel  context.CancelFunc
+	project           *Project
+	offsets           map[string]int64 // file path → current read offset
+	cancel            context.CancelFunc
+	lastCommandOutput string
+	lastRuleAlerts    map[string]time.Time
 }
 
 // Global singleton — set by NewService().
@@ -94,6 +97,9 @@ func (s *Service) SetMemoryUpdater(fn func(id, content, status string) error) {
 
 // Start loads projects from DB and starts polling goroutines.
 func (s *Service) Start(ctx context.Context) {
+	s.mu.Lock()
+	s.lifecycleContext = ctx
+	s.mu.Unlock()
 	if s.loadProjects == nil {
 		return
 	}
@@ -123,8 +129,8 @@ func (s *Service) Unsubscribe(ch AlertSubscriber) {
 func (s *Service) AddProject(ctx context.Context, p *Project) (*Project, error) {
 	// Discover log sources for the project path
 	logPaths, logCmd, _ := DiscoverLogSources(ctx, p.ProjectPath)
-	p.LogPaths = logPaths
-	if p.LogCommand == "" {
+	p.LogPaths = append(p.LogPaths, logPaths...)
+	if p.LogCommand == "" && len(p.LogPaths) == 0 {
 		p.LogCommand = logCmd
 	}
 	p.Status = StatusDiscovering
@@ -270,6 +276,11 @@ func KillPID(ctx context.Context, pid int) {
 
 // startProject creates a polling goroutine for a project.
 func (s *Service) startProject(ctx context.Context, p *Project) {
+	s.mu.RLock()
+	if s.lifecycleContext != nil {
+		ctx = s.lifecycleContext
+	}
+	s.mu.RUnlock()
 	pCtx, cancel := context.WithCancel(ctx)
 
 	ps := &projectState{
@@ -286,23 +297,32 @@ func (s *Service) startProject(ctx context.Context, p *Project) {
 	s.projects[p.ID] = ps
 	s.mu.Unlock()
 
-	interval := time.Duration(p.IntervalSec) * time.Second
-	if interval < 10*time.Second {
-		interval = 10 * time.Second
-	}
-
 	go func() {
 		// Run first poll immediately
 		s.poll(pCtx, ps)
 
-		ticker := time.NewTicker(interval)
+		lastPoll := time.Now()
+		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-pCtx.Done():
 				return
 			case <-ticker.C:
+				s.mu.RLock()
+				desired := time.Duration(ps.project.IntervalSec) * time.Second
+				s.mu.RUnlock()
+				if desired < 10*time.Second {
+					desired = 10 * time.Second
+				}
+				if config, err := LoadMonitoringConfig(p.UserID, p.ID); err == nil && config.IntervalSeconds > 0 {
+					desired = time.Duration(config.IntervalSeconds) * time.Second
+				}
+				if time.Since(lastPoll) < desired {
+					continue
+				}
 				s.poll(pCtx, ps)
+				lastPoll = time.Now()
 			}
 		}
 	}()
@@ -320,9 +340,20 @@ func (s *Service) logPathsSnapshot(ps *projectState) []string {
 func (s *Service) poll(ctx context.Context, ps *projectState) {
 	p := ps.project
 	var logChunks []string
+	config, configErr := LoadMonitoringConfig(p.UserID, p.ID)
+	if configErr != nil {
+		config = DefaultMonitoringConfig()
+		config.AIEnabled = false
+	}
 
 	// 1. Tail all tracked log files
-	for _, path := range s.logPathsSnapshot(ps) {
+	paths := append(s.logPathsSnapshot(ps), configuredLogPaths(p.ProjectPath, config)...)
+	seenPaths := map[string]bool{}
+	for _, path := range paths {
+		if seenPaths[path] {
+			continue
+		}
+		seenPaths[path] = true
 		chunk, newOffset, err := TailFile(path, ps.offsets[path])
 		if err != nil {
 			continue
@@ -336,13 +367,14 @@ func (s *Service) poll(ctx context.Context, ps *projectState) {
 	// 2. Run the log command if configured
 	if p.LogCommand != "" {
 		out, err := RunLogCommand(ctx, p.LogCommand)
-		if err == nil && strings.TrimSpace(out) != "" {
+		if err == nil && strings.TrimSpace(out) != "" && out != ps.lastCommandOutput {
+			ps.lastCommandOutput = out
 			logChunks = append(logChunks, fmt.Sprintf("=== command: %s ===\n%s", p.LogCommand, out))
 		}
 	}
 
 	// No new logs — nothing to analyze
-	if len(logChunks) == 0 {
+	if len(logChunks) == 0 && configErr == nil {
 		now := time.Now()
 		p.LastChecked = &now
 		if p.Status == StatusDiscovering || p.Status == StatusError {
@@ -353,13 +385,62 @@ func (s *Service) poll(ctx context.Context, ps *projectState) {
 
 	logData := strings.Join(logChunks, "\n\n")
 
-	// Limit log data sent to AI (keep last 8KB)
-	const maxLogBytes = 8192
+	// Bound deterministic matching; alerts and AI receive a smaller tail below.
+	const maxLogBytes = 256 * 1024
 	if len(logData) > maxLogBytes {
 		logData = logData[len(logData)-maxLogBytes:]
 	}
 
+	// Recognized failures remain actionable when no AI model is available.
+	if ps.lastRuleAlerts == nil {
+		ps.lastRuleAlerts = make(map[string]time.Time)
+	}
+	// Bound retained cooldown keys when users repeatedly revise custom patterns.
+	for key, at := range ps.lastRuleAlerts {
+		if time.Since(at) > 24*time.Hour {
+			delete(ps.lastRuleAlerts, key)
+		}
+	}
+	if len(ps.lastRuleAlerts) > 256 {
+		ps.lastRuleAlerts = make(map[string]time.Time)
+	}
+	matches := MatchConfiguredLogs(config, logData)
+	if configErr != nil {
+		matches = append(matches, RuleMatch{"monitor-config-error", "Custom monitoring settings could not be loaded; built-in rules remain active and AI analysis is disabled", SeverityWarn, 300})
+	}
+	matched := len(matches) > 0
+	rawLog := logData
+	if len(rawLog) > 8192 {
+		rawLog = rawLog[len(rawLog)-8192:]
+	}
+	for _, rule := range matches {
+		now := time.Now()
+		if now.Sub(ps.lastRuleAlerts[rule.ID]) < time.Duration(rule.CooldownSeconds)*time.Second {
+			continue
+		}
+		alert := &Alert{ProjectID: p.ID, ProjectName: p.Name, Severity: rule.Severity,
+			Message: rule.Message, RawLog: rawLog, CreatedAt: now}
+		if s.persistAlert != nil {
+			if err := s.persistAlert(alert); err != nil {
+				fmt.Printf("[monitor] failed to persist alert for %s: %v\n", p.ID, err)
+				continue
+			}
+		}
+		ps.lastRuleAlerts[rule.ID] = now
+		s.broker.Broadcast(alert)
+	}
+	if matched || !config.AIEnabled {
+		now := time.Now()
+		p.LastChecked = &now
+		p.Status = StatusActive
+		if s.persistProject != nil {
+			_ = s.persistProject(p.ID, p.Status, now)
+		}
+		return
+	}
+
 	// Ask the AI
+	logData = rawLog
 	client := ai.NewWithModel(s.modelID)
 	stream := client.AskStream(ctx, ai.PromptModeMonitor, logData, nil)
 
@@ -413,6 +494,7 @@ func (s *Service) poll(ctx context.Context, ps *projectState) {
 	if s.persistAlert != nil {
 		if err := s.persistAlert(alert); err != nil {
 			fmt.Printf("[monitor] failed to persist alert for %s: %v\n", p.Name, err)
+			return
 		}
 	}
 
@@ -442,6 +524,22 @@ func AddProjectFromChat(userID, name, path string, intervalSec int) error {
 	return err
 }
 
+// AddContainerProject explicitly binds application stdout/stderr to the monitor.
+func AddContainerProject(userID, name, path, container string, intervalSec int, projectIDs ...string) error {
+	if Global == nil {
+		return fmt.Errorf("monitor service not started")
+	}
+	projectID := ""
+	if len(projectIDs) > 0 {
+		projectID = projectIDs[0]
+	}
+	_, err := Global.AddProject(context.Background(), &Project{
+		ID: projectID, UserID: userID, Name: name, ProjectPath: path,
+		LogPaths: []string{"docker:" + container}, IntervalSec: intervalSec, Enabled: true,
+	})
+	return err
+}
+
 // MarshalProject serializes a project's log paths to/from JSON for DB storage.
 func MarshalLogPaths(paths []string) string {
 	b, _ := json.Marshal(paths)
@@ -468,13 +566,17 @@ func AddProjectViaRayAPI(rayURL string, p *Project) (*Project, error) {
 	}
 
 	payload, err := json.Marshal(map[string]any{
-		"userId":      p.UserID,
-		"name":        p.Name,
-		"projectPath": p.ProjectPath,
-		"logPaths":    p.LogPaths,
-		"logCommand":  p.LogCommand,
-		"intervalSec": p.IntervalSec,
-		"status":      string(p.Status),
+		"id":             p.ID,
+		"runCommand":     p.RunCommand,
+		"managedPid":     p.ManagedPid,
+		"managedLogFile": p.ManagedLogFile,
+		"userId":         p.UserID,
+		"name":           p.Name,
+		"projectPath":    p.ProjectPath,
+		"logPaths":       p.LogPaths,
+		"logCommand":     p.LogCommand,
+		"intervalSec":    p.IntervalSec,
+		"status":         string(p.Status),
 	})
 	if err != nil {
 		return p, err

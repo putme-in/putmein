@@ -1,19 +1,21 @@
 import path from "path";
 import fs from "fs";
-import { execFile } from "child_process";
-import { promisify } from "util";
+import { parseDeploymentEnvironment } from "@/lib/deployment-runtime";
+import { readProjectSetup, saveProjectSetup, deploymentSetupPayload } from "@/lib/project-setup-store";
+import { resolveProjectSource } from "@/lib/project-source";
+import { requireStoppedRuntime, hostRuntimeHandle } from "@/lib/host-runtime";
 import prisma from "@/lib/prisma";
 import { getDeploymentsDir } from "@/lib/settings";
-import { getEffectiveGitHubToken } from "@/lib/github-app";
+import { cloneGitSource } from "@/lib/git-source";
+import { normalizeGitUrl, redactGitUrl } from "@/lib/git-url";
 
-const execFileAsync = promisify(execFile);
 const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 export interface PipelineRunOptions {
   pipelineId: string;
   runId: string;
   userId: string;
-  skipSecurity?: boolean;
+  securityOverride?: string;
   overrideAuthor?: string;
 }
 
@@ -21,8 +23,7 @@ export interface PipelineRunOptions {
  * Strips any embedded access tokens or credentials from a GitHub URL.
  */
 export function sanitizeRepoUrl(url: string | null | undefined): string {
-  if (!url) return "";
-  return url.replace(/https?:\/\/[^@\s]+@github\.com\//gi, "https://github.com/");
+  return redactGitUrl(url);
 }
 
 /**
@@ -30,7 +31,7 @@ export function sanitizeRepoUrl(url: string | null | undefined): string {
  */
 export function sanitizeErrorMessage(msg: string): string {
   if (!msg) return "";
-  return msg.replace(/https?:\/\/[^@\s]+@github\.com/gi, "https://github.com");
+  return msg.replace(/(https?:\/\/)[^@\s/]+@/gi, "$1[redacted]@");
 }
 
 /**
@@ -42,23 +43,18 @@ export function sanitizeErrorMessage(msg: string): string {
  * 5. Updates RayDeployment to healthy/failed with container URLs and ports.
  */
 export async function executePipelineRun(options: PipelineRunOptions) {
-  const { pipelineId, runId, userId, skipSecurity = false } = options;
+  const { pipelineId, runId, userId, securityOverride } = options;
 
   let pipeline = await prisma.rayPipeline.findFirst({
     where: { id: pipelineId, userId },
   });
-  if (!pipeline) {
-    pipeline = await prisma.rayPipeline.findUnique({
-      where: { id: pipelineId },
-    });
-  }
   if (!pipeline) {
     console.error(`[CICD] Pipeline ${pipelineId} not found`);
     return;
   }
 
   const run = await prisma.rayPipelineRun.findFirst({
-    where: { id: runId },
+    where: { id: runId, pipelineId: pipeline.id },
   });
   if (!run) {
     console.error(`[CICD] PipelineRun ${runId} not found`);
@@ -99,21 +95,21 @@ export async function executePipelineRun(options: PipelineRunOptions) {
       ? await prisma.rayMonitorProject.findFirst({ where: { id: pipeline.projectId, userId } })
       : await prisma.rayMonitorProject.findFirst({ where: { name: { equals: pipeline.name }, userId } });
 
-    let targetDir = monitorProj?.projectPath && fs.existsSync(monitorProj.projectPath)
-      ? monitorProj.projectPath
-      : path.join(await getDeploymentsDir(), pipeline.name);
+    // Every run gets its own immutable source checkout. Never reset the live project.
+    const releaseRoot = path.join(await getDeploymentsDir(), ".releases", pipeline.id);
+    fs.mkdirSync(releaseRoot, { recursive: true });
+    const checkoutRoot = fs.mkdtempSync(path.join(releaseRoot, "run-"));
+    let targetDir = checkoutRoot;
+    const setup = monitorProj ? await readProjectSetup(userId, monitorProj.id) : null;
+    if (setup) {
+      deploymentSetupPayload(setup);
+      if (!setup.dockerEnabled) { stages[3].name = "Host Build"; stages[4].name = "Process Start"; }
+    }
 
     accumulatedLogs += `[GIT] Target directory: ${targetDir}\n[GIT] Repository: ${cleanRepoUrl} (branch: ${branch})\n`;
     await updateRunProgress();
 
     // ── 2. Git Synchronization Stage (Isolated) ──
-    const effectiveToken = await getEffectiveGitHubToken(userId);
-    const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "" };
-    let authUrl = cleanRepoUrl;
-    if (effectiveToken && cleanRepoUrl.includes("github.com")) {
-      authUrl = cleanRepoUrl.replace("https://", `https://x-access-token:${effectiveToken}@`);
-    }
-
     let commitHash = run.commitHash || "latest";
     let commitMessage = run.commitMessage || "Synced latest commit";
     let author = options.overrideAuthor || run.author || "CI/CD Auto-Sync";
@@ -124,55 +120,22 @@ export async function executePipelineRun(options: PipelineRunOptions) {
         throw new Error("Repository URL is not configured for this pipeline.");
       }
 
-      // Check if target directory has a valid git repository
-      const hasGitDir = fs.existsSync(path.join(targetDir, ".git"));
-      if (!hasGitDir) {
-        accumulatedLogs += `[GIT] No local git repository found at target. Cloning repository...\n`;
-        const parentDir = path.dirname(targetDir);
-        if (!fs.existsSync(parentDir)) {
-          fs.mkdirSync(parentDir, { recursive: true });
-        }
-        if (fs.existsSync(targetDir)) {
-          fs.rmSync(targetDir, { recursive: true, force: true });
-        }
-        await execFileAsync("git", ["clone", "-b", branch, "--single-branch", authUrl, targetDir], { env: gitEnv, timeout: 60000, windowsHide: true });
-      } else {
-        accumulatedLogs += `[GIT] Repository exists. Sanitizing remote origin and fetching latest commits...\n`;
-        // Ensure remote origin has clean URL (prevents stale token expiration in .git/config)
-        await execFileAsync("git", ["-C", targetDir, "remote", "set-url", "origin", cleanRepoUrl], { env: gitEnv, timeout: 10000, windowsHide: true }).catch(() => {});
-        // Fetch using authenticated URL
-        await execFileAsync("git", ["-C", targetDir, "fetch", authUrl, branch], { env: gitEnv, timeout: 30000, windowsHide: true });
-        await execFileAsync("git", ["-C", targetDir, "checkout", branch], { env: gitEnv, timeout: 10000, windowsHide: true });
-        await execFileAsync("git", ["-C", targetDir, "reset", "--hard", "FETCH_HEAD"], { env: gitEnv, timeout: 15000, windowsHide: true });
-        await execFileAsync("git", ["-C", targetDir, "clean", "-fd"], { env: gitEnv, timeout: 10000, windowsHide: true });
-      }
+      const source = await cloneGitSource(userId, normalizeGitUrl(pipeline.repoUrl), branch, targetDir);
+      commitHash = source.commitHash;
+      commitMessage = source.commitMessage || commitMessage;
+      author = options.overrideAuthor || source.author || author;
 
-      // Read commit metadata from disk
-      const { stdout: headHash } = await execFileAsync("git", ["-C", targetDir, "rev-parse", "--short", "HEAD"], { env: gitEnv, timeout: 5000, windowsHide: true });
-      const { stdout: headMsg } = await execFileAsync("git", ["-C", targetDir, "log", "-1", "--pretty=%B"], { env: gitEnv, timeout: 5000, windowsHide: true });
-      const { stdout: headAuthor } = await execFileAsync("git", ["-C", targetDir, "log", "-1", "--pretty=%an"], { env: gitEnv, timeout: 5000, windowsHide: true });
-
-      commitHash = headHash.trim() || commitHash;
-      commitMessage = headMsg.trim() || commitMessage;
-      author = options.overrideAuthor || headAuthor.trim() || author;
-
+      // Clone from the repository root, then build/scan the saved application directory.
+      targetDir = resolveProjectSource(checkoutRoot, setup?.appDirectory || ".").projectPath;
       stages[0].status = "success";
       stages[0].durationMs = Date.now() - t0;
       stages[1].status = "success"; // Dependencies verified / ready for docker build
-      stages[1].durationMs = 120;
+      stages[1].durationMs = 0;
 
       accumulatedLogs += `[GIT] Checked out commit ${commitHash}: "${commitMessage}" (by ${author})\n`;
       await updateRunProgress({ commitHash, commitMessage, author });
     } catch (gitErr: any) {
-      const rawStderr = typeof gitErr?.stderr === "string" ? gitErr.stderr : "";
-      const rawMsg = gitErr instanceof Error ? gitErr.message : String(gitErr);
-      const cause = gitErr?.cause ? ` (cause: ${gitErr.cause})` : "";
-      const detailedError = sanitizeErrorMessage((rawStderr.trim() || rawMsg.trim()) + cause);
-
-      accumulatedLogs += `\n[GIT ERROR] Failed to synchronize repository:\n${detailedError}\n`;
-      if (!effectiveToken && cleanRepoUrl.includes("github.com")) {
-        accumulatedLogs += `[GIT HINT] If this is a private repository, ensure GitHub is connected in Settings.\n`;
-      }
+      accumulatedLogs += "\n[GIT ERROR] Could not synchronize the repository. Check its HTTPS clone URL, branch, Git connection in Settings, and server network access.\n";
 
       stages[0].status = "failed";
       stages[0].durationMs = Date.now() - t0;
@@ -203,25 +166,27 @@ export async function executePipelineRun(options: PipelineRunOptions) {
     let deployment = await prisma.rayDeployment.findFirst({
       where: {
         userId,
-        OR: [
-          ...(pipeline.projectId ? [{ projectId: pipeline.projectId }] : []),
-          { name: pipeline.name },
-          { repoUrl: { contains: pipeline.name } },
-        ],
+        ...(pipeline.projectId ? { projectId: pipeline.projectId } : { name: pipeline.name, repoUrl: cleanRepoUrl }),
       },
     });
 
+    const previousRuntime = deployment?.containerName;
+    if (setup) requireStoppedRuntime(deployment, setup.dockerEnabled);
+    const savedContainerPort = setup ? setup.containerPort : (deployment?.containerId ? deployment.containerPort : undefined);
+    const savedEnvironment = setup?.envVars ?? parseDeploymentEnvironment(deployment?.envVars);
     if (deployment) {
       deployment = await prisma.rayDeployment.update({
         where: { id: deployment.id },
         data: {
           status: "building",
+          ...(setup && !setup.dockerEnabled && monitorProj ? { containerName: hostRuntimeHandle(userId, monitorProj.id), containerId: null, imageName: null, containerPort: null } : {}),
           commitHash,
           commitMessage,
           repoUrl: cleanRepoUrl,
           branch,
           projectPath: targetDir,
-          hostPort: pipeline.port || deployment.hostPort || 3000,
+          hostPort: setup?.hostPort ?? pipeline.port ?? deployment.hostPort ?? 3000,
+          envVars: JSON.stringify(savedEnvironment),
           buildLogs: accumulatedLogs,
           updatedAt: new Date(),
         },
@@ -232,17 +197,18 @@ export async function executePipelineRun(options: PipelineRunOptions) {
           userId,
           name: pipeline.name,
           projectId: pipeline.projectId || null,
-          sourceType: "github",
+          sourceType: new URL(cleanRepoUrl).hostname === "github.com" ? "github" : "git",
           repoUrl: cleanRepoUrl,
           branch,
           commitHash,
           commitMessage,
           projectPath: targetDir,
-          containerName: `ray-${pipeline.name.toLowerCase()}`,
+          containerName: setup && !setup.dockerEnabled && monitorProj ? hostRuntimeHandle(userId, monitorProj.id) : `ray-${pipeline.name.toLowerCase()}`,
           imageName: `${pipeline.name.toLowerCase()}:latest`,
           status: "building",
-          hostPort: pipeline.port || 3000,
-          containerPort: 3000,
+          hostPort: setup?.hostPort ?? pipeline.port ?? 3000,
+          envVars: JSON.stringify(savedEnvironment),
+          containerPort: null,
           buildLogs: accumulatedLogs,
         },
       });
@@ -256,227 +222,25 @@ export async function executePipelineRun(options: PipelineRunOptions) {
     await updateRunProgress();
 
     let securityBlocked = false;
-    if (!skipSecurity) {
-      const t0Sec = Date.now();
-      try {
-        const settingsRes = await fetch(`${BRAIN_URL}/v1/settings`, {
-          signal: AbortSignal.timeout(10000),
-          headers: { "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
-        }).catch(() => null);
-        const settingsData = settingsRes?.ok ? await settingsRes.json() : null;
-        const securityEnabled = settingsData?.securityChecksEnabled !== false;
-
-        if (securityEnabled) {
-          accumulatedLogs += "[SECURITY] Running pre-deployment security & CVE audit...\n";
-          const secRes = await fetch(`${BRAIN_URL}/v1/security/scan`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "",
-            },
-            body: JSON.stringify({
-              projectId: pipeline.projectId || pipeline.id,
-              projectName: pipeline.name,
-              projectPath: targetDir,
-              trigger: "cicd_pipeline",
-            }),
-            signal: AbortSignal.timeout(60000),
-          });
-
-          if (secRes.ok) {
-            const secData = await secRes.json();
-            const report = secData.report;
-
-            if (report) {
-              await prisma.raySecurityScan.create({
-                data: {
-                  userId,
-                  projectId: pipeline.projectId || pipeline.id,
-                  projectName: pipeline.name,
-                  trigger: "cicd_pipeline",
-                  status: report.status || "passed",
-                  dangerCount: report.dangerCount || 0,
-                  warnCount: report.warnCount || 0,
-                  infoCount: report.infoCount || 0,
-                  findings: JSON.stringify(report.findings || []),
-                  logs: report.logs || "",
-                },
-              });
-
-              stages[2].durationMs = Date.now() - t0Sec;
-              accumulatedLogs += `[SECURITY] Audit result: ${report.dangerCount} Danger, ${report.warnCount} Warning, ${report.infoCount} Info.\n`;
-
-              if (report.dangerCount > 0) {
-                stages[2].status = "danger";
-                for (let i = 3; i < stages.length; i++) {
-                  stages[i].status = "skipped";
-                }
-                accumulatedLogs += "\n🚨 [DEPLOYMENT BLOCKED] Critical danger-level vulnerabilities detected!\n" +
-                  "Automated deployment halted. Dual confirmation required in dashboard to consent and override.\n";
-
-                await prisma.rayPipelineRun.update({
-                  where: { id: run.id },
-                  data: {
-                    status: "blocked_danger",
-                    stages: JSON.stringify(stages),
-                    logs: accumulatedLogs,
-                  },
-                });
-
-                await prisma.rayPipeline.update({
-                  where: { id: pipeline.id },
-                  data: { status: "blocked_danger" },
-                });
-
-                await prisma.rayDeployment.update({
-                  where: { id: deployment.id },
-                  data: {
-                    status: "failed",
-                    buildLogs: accumulatedLogs,
-                  },
-                });
-
-                securityBlocked = true;
-                return;
-              }
-
-              stages[2].status = "success";
-              await updateRunProgress();
-            } else {
-              stages[2].status = "failed";
-              stages[2].durationMs = Date.now() - t0Sec;
-              for (let i = 3; i < stages.length; i++) {
-                stages[i].status = "skipped";
-              }
-              accumulatedLogs += "\n[SECURITY ERROR] Security audit service returned an empty report.\n";
-
-              await prisma.rayPipelineRun.update({
-                where: { id: run.id },
-                data: {
-                  status: "failed",
-                  stages: JSON.stringify(stages),
-                  logs: accumulatedLogs,
-                },
-              });
-
-              await prisma.rayPipeline.update({
-                where: { id: pipeline.id },
-                data: { status: "failed", lastRunAt: new Date() },
-              });
-
-              await prisma.rayDeployment.update({
-                where: { id: deployment.id },
-                data: {
-                  status: "failed",
-                  buildLogs: accumulatedLogs,
-                },
-              });
-
-              securityBlocked = true;
-              return;
-            }
-          } else {
-            const errText = await secRes.text().catch(() => "Unknown error");
-            stages[2].status = "failed";
-            stages[2].durationMs = Date.now() - t0Sec;
-            for (let i = 3; i < stages.length; i++) {
-              stages[i].status = "skipped";
-            }
-            accumulatedLogs += `\n[SECURITY ERROR] Security audit scan failed (HTTP ${secRes.status}): ${errText}\n`;
-
-            await prisma.rayPipelineRun.update({
-              where: { id: run.id },
-              data: {
-                status: "failed",
-                stages: JSON.stringify(stages),
-                logs: accumulatedLogs,
-              },
-            });
-
-            await prisma.rayPipeline.update({
-              where: { id: pipeline.id },
-              data: { status: "failed", lastRunAt: new Date() },
-            });
-
-            await prisma.rayDeployment.update({
-              where: { id: deployment.id },
-              data: {
-                status: "failed",
-                buildLogs: accumulatedLogs,
-              },
-            });
-
-            securityBlocked = true;
-            return;
-          }
-        } else {
-          stages[2].status = "skipped";
-          accumulatedLogs += "[SECURITY] Security checks disabled in settings. Skipping audit.\n";
-          await updateRunProgress();
-        }
-      } catch (secErr: any) {
-        const isTimeout = secErr?.name === "AbortError" || secErr?.name === "TimeoutError";
-        const errMsg = isTimeout
-          ? "Security audit request timed out after 60 seconds."
-          : `Security audit failed: ${secErr?.message || "connection error"}`;
-
-        accumulatedLogs += `\n[SECURITY ERROR] ${errMsg}\n`;
-        stages[2].status = "failed";
-        stages[2].durationMs = Date.now() - t0Sec;
-        for (let i = 3; i < stages.length; i++) {
-          stages[i].status = "skipped";
-        }
-
-        await prisma.rayPipelineRun.update({
-          where: { id: run.id },
-          data: {
-            status: "failed",
-            stages: JSON.stringify(stages),
-            logs: accumulatedLogs,
-          },
-        });
-
-        await prisma.rayPipeline.update({
-          where: { id: pipeline.id },
-          data: { status: "failed", lastRunAt: new Date() },
-        });
-
-        await prisma.rayDeployment.update({
-          where: { id: deployment.id },
-          data: {
-            status: "failed",
-            buildLogs: accumulatedLogs,
-          },
-        });
-
-        securityBlocked = true;
-        return;
-      }
-    } else {
-      stages[2].status = "overridden";
-      accumulatedLogs += "[SECURITY] Security block overridden with dual-consent authorization.\n";
-      await updateRunProgress();
-    }
-
-    if (securityBlocked) return;
-
-    // ── 5. Docker Build & Container Deploy via Brain ──
-    currentStageIndex = 3;
-    stages[3].status = "running";
-    stages[4].status = "pending";
-    await updateRunProgress();
-
-    accumulatedLogs += `[BRAIN] Dispatching containerized build to Brain at ${BRAIN_URL}...\n`;
+    let runtimeRestored = false;
+    // Brain enforces and persists the same gate for every managed deployment.
+    // A caller cannot bypass it by claiming a previous scan passed.
+    accumulatedLogs += `[BRAIN] Dispatching ${setup && !setup.dockerEnabled ? "host" : "containerized"} build to Brain at ${BRAIN_URL}...\n`;
 
     const deployPayload = {
       id: deployment.id,
+      projectId: monitorProj?.id || deployment.projectId || pipeline.id,
+      securityOverride,
+      previousRuntime,
       userId,
       name: pipeline.name,
       projectPath: targetDir,
-      sourceType: "github",
-      repoUrl: cleanRepoUrl,
+      containerPort: savedContainerPort || undefined,
+      envVars: savedEnvironment,
+      sourceType: "local", // Deploy exactly the checkout that passed the audit; never pull again.
       branch,
       hostPort: pipeline.port && pipeline.port !== 4567 && pipeline.port !== 4500 ? pipeline.port : undefined,
+      ...(setup ? deploymentSetupPayload(setup) : {}),
     };
 
     let bRes: Response;
@@ -522,6 +286,9 @@ export async function executePipelineRun(options: PipelineRunOptions) {
     let buffer = "";
     let deploySuccessful = false;
     let finalPort = pipeline.port || 3000;
+    let finalRuntimePath = targetDir;
+    let finalRuntime = "docker";
+    let finalContainerPort = savedContainerPort;
     let finalUrl = "";
     let finalContainer = `ray-${pipeline.name.toLowerCase()}`;
     const INACTIVITY_TIMEOUT_MS = 90000;
@@ -581,14 +348,26 @@ export async function executePipelineRun(options: PipelineRunOptions) {
           if (line.startsWith("data: ")) {
             try {
               const ev = JSON.parse(line.slice(6));
+              if (ev.step === "rollback" && ev.runtimeRestored && ev.activeDeploymentId === deployment.id) runtimeRestored = true;
               if (ev.logDelta) accumulatedLogs += ev.logDelta;
               else if (ev.message) accumulatedLogs += `[${(ev.step || "deploy").toUpperCase()}] ${ev.message}\n`;
 
               if (ev.port) finalPort = ev.port;
+              if (ev.projectPath) finalRuntimePath = ev.projectPath;
+              if (ev.runtime) finalRuntime = ev.runtime;
+              if (Number.isInteger(ev.containerPort) && ev.containerPort > 0 && ev.containerPort <= 65535) finalContainerPort = ev.containerPort;
               if (ev.url) finalUrl = ev.url;
               if (ev.container) finalContainer = ev.container;
 
-              if (ev.step === "building") {
+              if (ev.step === "security") {
+                if (ev.scanId) accumulatedLogs += `[SECURITY_SCAN] ${ev.scanId}\n`;
+                currentStageIndex = 2;
+                stages[2].status = ev.status === "error" ? (ev.securityStatus === "danger" ? "danger" : "failed") : ev.status === "running" ? "running" : ev.securityStatus === "skipped" ? "skipped" : ev.securityOverridden ? "overridden" : "success";
+                if (ev.status === "error") {
+                  securityBlocked = ev.securityStatus === "danger";
+                  for (let index = 3; index < stages.length; index++) stages[index].status = "skipped";
+                }
+              } else if (ev.step === "building") {
                 currentStageIndex = 3;
                 stages[3].status = "running";
               } else if (ev.step === "launching") {
@@ -641,8 +420,11 @@ export async function executePipelineRun(options: PipelineRunOptions) {
         where: { id: deployment.id },
         data: {
           status: "healthy",
+          projectPath: finalRuntimePath,
+          ...(finalRuntime === "host" ? { containerId: null, imageName: null, containerPort: null } : {}),
           deployUrl: finalUrl,
           hostPort: finalPort,
+          ...(finalRuntime !== "host" && finalContainerPort ? { containerPort: finalContainerPort } : {}),
           containerName: finalContainer,
           buildLogs: accumulatedLogs,
           updatedAt: new Date(),
@@ -650,16 +432,20 @@ export async function executePipelineRun(options: PipelineRunOptions) {
       });
 
       if (monitorProj) {
+        if (setup) await saveProjectSetup(userId, monitorProj.id, { ...setup, sourceRoot: checkoutRoot });
         await prisma.rayMonitorProject.update({
           where: { id: monitorProj.id },
           data: {
-            projectUrl: finalUrl,
+            projectUrl: setup?.projectUrl || finalUrl,
+            ...(setup ? { runCommand: setup.startCommand || null } : {}),
+            projectPath: finalRuntimePath,
+            ...(!setup || setup.dockerEnabled ? { logPaths: JSON.stringify([`docker:${finalContainer}`]), managedPid: null, managedLogFile: null } : {}),
             status: "running",
           },
         }).catch(() => {});
       }
     } else {
-      accumulatedLogs += `\n❌ [FAILED] Container deployment encountered an error.\n`;
+      accumulatedLogs += `\n❌ [FAILED] Application deployment encountered an error.\n`;
       // Ensure pending downstream stages are marked skipped instead of left pending
       for (let i = 0; i < stages.length; i++) {
         if (stages[i].status === "running") stages[i].status = "failed";
@@ -669,7 +455,7 @@ export async function executePipelineRun(options: PipelineRunOptions) {
       await prisma.rayPipelineRun.update({
         where: { id: run.id },
         data: {
-          status: "failed",
+          status: securityBlocked ? "blocked_danger" : "failed",
           stages: JSON.stringify(stages),
           logs: accumulatedLogs,
         },
@@ -683,7 +469,7 @@ export async function executePipelineRun(options: PipelineRunOptions) {
       await prisma.rayDeployment.update({
         where: { id: deployment.id },
         data: {
-          status: "failed",
+          status: runtimeRestored ? "healthy" : "failed",
           buildLogs: accumulatedLogs,
           updatedAt: new Date(),
         },

@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { readProjectSetup } from "@/lib/project-setup-store";
+import { ensureGitPipeline } from "@/lib/cicd-sync";
 import prisma from "@/lib/prisma";
 import { verifyGithubWebhookSignature, isValidGitBranch } from "@/lib/github-webhook";
 import path from "path";
 import fs from "fs";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { getDeploymentsDir } from "@/lib/settings";
 
-const execFileAsync = promisify(execFile);
+import { cloneGitSource } from "@/lib/git-source";
+import { gitRepositoryKey } from "@/lib/git-url";
 
 export const runtime = "nodejs";
 
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
     }
 
     const allIntegrations = await prisma.rayGithubIntegration.findMany({
-      select: { webhookSecret: true },
+      select: { webhookSecret: true, userId: true },
     });
     const candidateSecrets = [
       process.env.GITHUB_WEBHOOK_SECRET,
@@ -36,6 +37,10 @@ export async function POST(req: NextRequest) {
     )) {
       return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
     }
+
+    const globalAuthorized = !!process.env.GITHUB_WEBHOOK_SECRET && verifyGithubWebhookSignature(rawBody, signature, process.env.GITHUB_WEBHOOK_SECRET);
+    const authorizedOwners = allIntegrations.filter(integration => integration.webhookSecret && verifyGithubWebhookSignature(rawBody, signature, integration.webhookSecret)).map(integration => integration.userId);
+    const ownerScope = globalAuthorized ? {} : { userId: { in: authorizedOwners } };
 
     let payload: {
       repository?: { full_name?: string; clone_url?: string };
@@ -58,33 +63,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No repository in payload" }, { status: 400 });
     }
 
+    try {
+      if (gitRepositoryKey(cloneUrl) !== gitRepositoryKey(`https://github.com/${repoFullName}`)) throw new Error();
+    } catch { return NextResponse.json({ error: "Repository clone URL does not match the GitHub payload" }, { status: 400 }); }
+
     if (rawBranch && !isValidGitBranch(rawBranch)) {
       return NextResponse.json({ error: "Invalid branch reference in webhook payload" }, { status: 400 });
     }
     const branch = rawBranch;
 
     // 1. Find matching pipelines and deployments for this repository
-    const shortRepoName = repoFullName.split("/").pop() || repoFullName;
     const [deployments, pipelines] = await Promise.all([
       prisma.rayDeployment.findMany({
         where: {
-          OR: [
-            { repoUrl: { contains: repoFullName } },
-            { repoUrl: { contains: shortRepoName } },
-            { name: { equals: shortRepoName } },
-          ],
+          ...ownerScope,
+          repoUrl: { in: [`https://github.com/${repoFullName}`, `https://github.com/${repoFullName}.git`] },
         },
-        include: { user: true },
       }),
       prisma.rayPipeline.findMany({
         where: {
-          OR: [
-            { repoUrl: { contains: repoFullName } },
-            { repoUrl: { contains: shortRepoName } },
-            { name: { equals: shortRepoName } },
-          ],
+          ...ownerScope,
+          repoUrl: { in: [`https://github.com/${repoFullName}`, `https://github.com/${repoFullName}.git`] },
         },
-        include: { user: true },
       }),
     ]);
 
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
     const userIds = [...new Set([...deployments, ...pipelines].map(({ userId }) => userId))];
     const integrations: Array<{ webhookSecret: string | null }> = await prisma.rayGithubIntegration.findMany({
       where: { userId: { in: userIds } },
-      select: { webhookSecret: true },
+      select: { webhookSecret: true, userId: true },
     });
     const repoCandidateSecrets = [
       process.env.GITHUB_WEBHOOK_SECRET,
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid webhook signature" }, { status: 401 });
     }
 
-    if (event !== "push") {
+    if (event !== "push" || !payload.ref?.startsWith("refs/heads/")) {
       return NextResponse.json({ message: `Ignored event: ${event}` });
     }
 
@@ -118,11 +118,18 @@ export async function POST(req: NextRequest) {
 
     const results = [];
 
+    // Reconcile configured projects before dispatch. They must use the runner
+    // that understands their application directory and saved runtime settings.
+    for (const dep of deployments) {
+      if (!dep.projectId || !await readProjectSetup(dep.userId, dep.projectId)) continue;
+      if (pipelines.some(pipe => pipe.userId === dep.userId && pipe.projectId === dep.projectId)) continue;
+      const pipeline = await ensureGitPipeline(dep.userId, dep.name, cloneUrl, { projectId: dep.projectId, branch: dep.branch || branch });
+      if (pipeline && pipeline.branch === branch) pipelines.push(pipeline);
+    }
+
     // Trigger CI/CD Pipelines
-    const triggeredPipelineNames = new Set<string>();
     for (const pipe of pipelines) {
-      if (!pipe.autoDeploy) continue;
-      triggeredPipelineNames.add(pipe.name.toLowerCase());
+      if (!pipe.autoDeploy || pipe.branch !== branch) continue;
 
       const run = await prisma.rayPipelineRun.create({
         data: {
@@ -161,32 +168,22 @@ export async function POST(req: NextRequest) {
 
     // Trigger Standalone Deployments (if not already handled by a pipeline above)
     for (const dep of deployments) {
-      if (triggeredPipelineNames.has(dep.name.toLowerCase())) continue;
-
-      const targetDir = dep.projectPath || path.join(baseDeployDir, dep.name);
-      const { getEffectiveGitHubToken } = await import("@/lib/github-app");
-      const effectiveToken = await getEffectiveGitHubToken(dep.userId);
-      const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "" };
-
-      let authUrl = cloneUrl;
-      if (effectiveToken && cloneUrl.includes("github.com")) {
-        authUrl = cloneUrl.replace("https://", `https://x-access-token:${effectiveToken}@`);
-      }
+      if (dep.branch && dep.branch !== branch) continue;
+      // A linked pipeline (including one with auto-deploy off) owns this update path.
+      if (pipelines.some(pipe => pipe.userId === dep.userId && (dep.projectId ? pipe.projectId === dep.projectId : pipe.name.toLowerCase() === dep.name.toLowerCase()))) continue;
+      if (dep.projectId && await readProjectSetup(dep.userId, dep.projectId)) continue;
 
       const safeBranch = (branch && isValidGitBranch(branch) ? branch : dep.branch) || "main";
-
+      const stagingRoot = path.join(baseDeployDir, ".webhook-releases");
+      fs.mkdirSync(stagingRoot, { recursive: true, mode: 0o700 });
+      const staging = fs.mkdtempSync(path.join(stagingRoot, "source-"));
+      const targetDir = path.join(staging, "repo");
       try {
-        if (!fs.existsSync(targetDir)) {
-          await execFileAsync("git", ["clone", "-b", safeBranch, "--single-branch", authUrl, targetDir], { env: gitEnv, windowsHide: true });
-        } else {
-          await execFileAsync("git", ["-C", targetDir, "remote", "set-url", "origin", cloneUrl], { env: gitEnv, windowsHide: true }).catch(() => {});
-          await execFileAsync("git", ["-C", targetDir, "fetch", authUrl, safeBranch], { env: gitEnv, windowsHide: true });
-          await execFileAsync("git", ["-C", targetDir, "checkout", safeBranch], { env: gitEnv, windowsHide: true });
-          await execFileAsync("git", ["-C", targetDir, "reset", "--hard", "FETCH_HEAD"], { env: gitEnv, windowsHide: true });
-          await execFileAsync("git", ["-C", targetDir, "clean", "-fd"], { env: gitEnv, windowsHide: true });
-        }
-      } catch (gitErr) {
-        console.error(`Git sync error for deployment ${dep.name}:`, gitErr);
+        await cloneGitSource(dep.userId, cloneUrl, safeBranch, targetDir);
+      } catch {
+        fs.rmSync(staging, { recursive: true, force: true });
+        results.push({ deploymentId: dep.id, name: dep.name, status: "git_failed" });
+        continue;
       }
 
       // Update deployment record to building status
@@ -205,14 +202,24 @@ export async function POST(req: NextRequest) {
         headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
         body: JSON.stringify({
           id: dep.id,
+          projectId: dep.projectId || undefined,
           userId: dep.userId,
           name: dep.name,
           projectPath: targetDir,
-          sourceType: "github",
-          repoUrl: cloneUrl,
+          sourceType: "local",
           branch: safeBranch,
         }),
-      }).catch((e) => console.error("Auto-deploy error:", e));
+      }).then(async (response) => {
+        const output = await response.text();
+        const events = output.split("\n").filter(line => line.startsWith("data: ")).flatMap(line => {
+          try { return [JSON.parse(line.slice(6))]; } catch { return []; }
+        });
+        if (!response.ok || !events.some(event => event.step === "complete" && event.status === "success")) {
+          await prisma.rayDeployment.update({ where: { id: dep.id }, data: { status: "failed", buildLogs: output.slice(-100000) } });
+        }
+      }).catch(async () => {
+        await prisma.rayDeployment.update({ where: { id: dep.id }, data: { status: "failed", buildLogs: "Automatic deployment failed. Review the Security reports and Brain logs." } }).catch(() => {});
+      });
 
       results.push({ deploymentId: dep.id, name: dep.name, status: "redeploying" });
     }

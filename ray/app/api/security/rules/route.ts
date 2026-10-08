@@ -7,6 +7,7 @@ export async function GET() {
   try {
     const res = await fetch(`${BRAIN_URL}/v1/security/rules`, {
       signal: AbortSignal.timeout(4000),
+      headers: { "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
     });
 
     if (res.ok) {

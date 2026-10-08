@@ -47,6 +47,7 @@ async function handleProxy(req: NextRequest) {
         lower !== "host" &&
         lower !== "connection" &&
         lower !== "content-length" &&
+        !["x-domain-proxy-secret", "x-brain-secret", "x-internal-secret", "x-domain-requested", "keep-alive", "transfer-encoding", "upgrade", "te", "trailer", "proxy-authorization", "proxy-authenticate"].includes(lower) &&
         !lower.startsWith("x-target-")
       ) {
         forwardHeaders.set(key, val);

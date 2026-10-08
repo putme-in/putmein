@@ -67,8 +67,9 @@ export async function GET(req: NextRequest) {
     // Update deployments without prematurely resolving building states
     const updatedDeployments = await Promise.all(
       deployments.map(async (dep) => {
+        const hostMode = dep.containerName?.startsWith("process:") || false;
         const baseName = dep.name.toLowerCase();
-        const matched = containers.find((c) => {
+        const matched = hostMode ? undefined : containers.find((c) => {
           const cName = (c.name || "").toLowerCase();
           return cName.includes("ray-" + baseName) || cName === baseName || cName.includes(baseName);
         });
@@ -78,12 +79,12 @@ export async function GET(req: NextRequest) {
           // If building was started recently, preserve building status.
           // Never prematurely mark as healthy just because an older container exists!
           const ageMs = Date.now() - new Date(dep.updatedAt || dep.createdAt).getTime();
-          if (ageMs > 3 * 60 * 1000) {
+          if (ageMs > (hostMode ? 15 : 3) * 60 * 1000) {
             activeDep = await prisma.rayDeployment.update({
               where: { id: dep.id },
               data: {
                 status: "failed",
-                buildLogs: (dep.buildLogs || "") + "\n[Ray] Build process stopped responding after 3 minutes. Please ensure Docker daemon is running.",
+                buildLogs: (dep.buildLogs || "") + `\n[Ray] Build process stopped responding after ${hostMode ? 15 : 3} minutes. Check the deployment runtime and build logs.`,
               },
             });
           }
@@ -138,7 +139,8 @@ export async function GET(req: NextRequest) {
           language: stack.language,
           icon: stack.icon,
           colorClasses: stack.colorClasses,
-          isDocker: stack.hasDockerfile || dep.sourceType === "container" || !!matched || !!dep.containerName,
+          isDocker: !hostMode && (stack.hasDockerfile || dep.sourceType === "container" || !!matched || !!dep.containerName),
+          runtime: hostMode ? "host" : "docker",
           container: matched
             ? {
                 id: matched.id,

@@ -5,7 +5,7 @@ import prisma from "@/lib/prisma";
 const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
 // GET /api/monitor/stream — SSE proxy from Brain to the client
-// This proxies brain's /v1/monitor/stream and also persists alerts to the DB
+// Brain persists alerts before broadcasting; browser connections never write alerts.
 export async function GET() {
   const cookieStore = await cookies();
   const token = cookieStore.get("ray_token")?.value;
@@ -51,6 +51,7 @@ export async function GET() {
         const decoder = new TextDecoder();
         let buffer = "";
 
+        let currentEvent = "message";
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -59,7 +60,6 @@ export async function GET() {
           const lines = buffer.split("\n");
           buffer = lines.pop() || "";
 
-          let currentEvent = "message";
           for (const line of lines) {
             if (line.startsWith("event:")) {
               currentEvent = line.slice(6).trim();
@@ -70,19 +70,6 @@ export async function GET() {
                   const alert = JSON.parse(data);
                   // Only forward alerts that belong to this user's projects
                   if (alert.projectId && userProjectIds.has(alert.projectId)) {
-                    // Persist alert to DB
-                    try {
-                      await prisma.rayMonitorAlert.create({
-                        data: {
-                          projectId: alert.projectId,
-                          severity: alert.severity || "info",
-                          message: alert.message || "",
-                          rawLog: alert.rawLog || "",
-                        },
-                      });
-                    } catch {
-                      // May fail if alert already persisted — ignore
-                    }
                     sendSSE("alert", data);
                   }
                 } catch {

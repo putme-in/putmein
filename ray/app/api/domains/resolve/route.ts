@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
     const projects = await prisma.rayMonitorProject.findMany({
       select: {
         id: true,
+        userId: true,
         name: true,
         projectUrl: true,
         status: true,
@@ -51,8 +52,8 @@ export async function GET(req: NextRequest) {
       const domains = parseProjectDomains(p.projectUrl);
       const hostnames = domains.map(normalizeDomain);
       if (hostnames.includes(cleanHost)) {
+        if (matchedProject) return NextResponse.json({ found: false, error: "Domain assignment is ambiguous" }, { status: 409 });
         matchedProject = p;
-        break;
       }
     }
 
@@ -65,54 +66,11 @@ export async function GET(req: NextRequest) {
     // 2. Resolve target upstream port
     let targetPort: number | null = null;
 
-    // Check if projectUrl has a port embedded
-    if (matchedProject.projectUrl) {
-      const portMatch = matchedProject.projectUrl.match(/:(\d+)/);
-      if (portMatch) {
-        const pNum = parseInt(portMatch[1], 10);
-        if (pNum > 0 && pNum !== 80 && pNum !== 443 && pNum !== 3000 && pNum !== 4567) {
-          targetPort = pNum;
-        }
-      }
-    }
-
-    // Check deployment hostPort
-    if (!targetPort) {
-      const dep = await prisma.rayDeployment.findFirst({
-        where: {
-          OR: [
-            { projectId: matchedProject.id },
-            { name: matchedProject.name },
-            { name: matchedProject.name.toLowerCase() },
-          ],
-        },
-        orderBy: { createdAt: "desc" },
-        select: { hostPort: true },
-      });
-      if (dep?.hostPort) {
-        targetPort = dep.hostPort;
-      }
-    }
-
-    // Check running containers via Brain
-    if (!targetPort) {
-      try {
-        const cRes = await fetch(`${BRAIN_URL}/v1/containers`, { headers: { "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" }, signal: AbortSignal.timeout(1000) });
-        if (cRes.ok) {
-          const cData = await cRes.json();
-          const baseName = matchedProject.name.toLowerCase();
-          const container = (cData.containers || []).find((c: any) => {
-            const cName = (c.name || "").toLowerCase();
-            return cName.includes("ray-" + baseName) || cName === baseName || cName.includes(baseName);
-          });
-          if (container?.port) {
-            targetPort = container.port;
-          }
-        }
-      } catch {
-        /* Brain offline */
-      }
-    }
+    const deployment = await prisma.rayDeployment.findFirst({
+      where: { userId: matchedProject.userId, projectId: matchedProject.id, status: "healthy" },
+      orderBy: { updatedAt: "desc" }, select: { hostPort: true },
+    });
+    targetPort = deployment?.hostPort || null;
 
     const result: CachedResolution = {
       found: true,

@@ -112,11 +112,11 @@ export default function LoginPage() {
         return;
       }
 
-      // Respect the 'from' query parameter if valid, falling back to /chat
-      let destination = "/chat";
+      // Respect the 'from' query parameter if valid, falling back to /dashboard
+      let destination = "/dashboard";
       if (typeof window !== "undefined") {
         const searchParams = new URLSearchParams(window.location.search);
-        destination = getSafeRedirectUrl(searchParams.get("from"));
+        destination = getSafeRedirectUrl(searchParams.get("from"), "/dashboard");
       }
 
       window.location.href = destination;

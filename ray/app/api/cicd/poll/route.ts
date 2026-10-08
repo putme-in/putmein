@@ -1,17 +1,14 @@
+import { sameGitCommit } from "@/lib/git-commit";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyToken } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import fs from "fs";
-import path from "path";
-
-const execFileAsync = promisify(execFile);
+import { cloneGitSource } from "@/lib/git-source";
 
 export const runtime = "nodejs";
 
-const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
+
 
 // POST /api/cicd/poll — checks remote GitHub repos for new commits asynchronously without blocking
 export async function POST(req: NextRequest) {
@@ -53,10 +50,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: "No active local pipelines", triggered: [] });
     }
 
-    const { getEffectiveGitHubToken } = await import("@/lib/github-app");
-    const effectiveToken = await getEffectiveGitHubToken(user.userId);
-    const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_ASKPASS: "" };
-
     const triggered = [];
 
     for (const pipe of validPipelines) {
@@ -64,31 +57,20 @@ export async function POST(req: NextRequest) {
       if (!targetDir || !fs.existsSync(targetDir)) continue;
 
       try {
-        let authUrl = pipe.repoUrl;
-        if (effectiveToken && authUrl.includes("github.com")) {
-          authUrl = authUrl.replace(/https:\/\/(?:x-access-token:[^@]+@)?github\.com\//i, `https://x-access-token:${effectiveToken}@github.com/`);
-        }
-
-        // Check remote commit hash asynchronously
-        const { stdout: remoteOut } = await execFileAsync(
-          "git",
-          ["ls-remote", authUrl, `refs/heads/${pipe.branch || "main"}`],
-          { env: gitEnv, timeout: 5000, windowsHide: true }
-        );
-
-        const match = remoteOut.trim().match(/^([a-f0-9]{40})/i);
-        if (!match) continue;
-
-        const latestRemoteCommit = match[1].slice(0, 7);
+        const remote = await cloneGitSource(user.userId, pipe.repoUrl, pipe.branch || "main", "", true);
+        const latestRemoteCommit = remote.commitHash.toLowerCase();
         const lastRunCommit = pipe.runs[0]?.commitHash;
 
         // If there's a new commit that hasn't been run yet, and no active run is already building:
-        const isAlreadyRunning = pipe.runs[0]?.status === "running" && (Date.now() - new Date(pipe.runs[0].createdAt).getTime() < 90000);
-        if (latestRemoteCommit && latestRemoteCommit !== lastRunCommit && latestRemoteCommit !== "push-tr" && !isAlreadyRunning) {
+        const isAlreadyRunning = pipe.runs[0]?.status === "running";
+        if (latestRemoteCommit && !sameGitCommit(latestRemoteCommit, lastRunCommit) && latestRemoteCommit !== "push-tr" && !isAlreadyRunning) {
           const commitMsg = `New commit ${latestRemoteCommit} on ${pipe.branch}`;
 
           // Create PipelineRun
-          const newRun = await prisma.rayPipelineRun.create({
+          const newRun = await prisma.$transaction(async tx => {
+            const current = await tx.rayPipeline.findFirst({ where: { id: pipe.id, userId: user.userId, autoDeploy: true }, include: { runs: { orderBy: { createdAt: "desc" }, take: 1 } } });
+            if (!current || current.runs[0]?.status === "running" || sameGitCommit(latestRemoteCommit, current.runs[0]?.commitHash)) return null;
+            const created = await tx.rayPipelineRun.create({
             data: {
               pipelineId: pipe.id,
               commitHash: latestRemoteCommit,
@@ -107,10 +89,14 @@ export async function POST(req: NextRequest) {
             },
           });
 
-          await prisma.rayPipeline.update({
+          await tx.rayPipeline.update({
             where: { id: pipe.id },
             data: { status: "running", lastRunAt: new Date() },
           });
+
+            return created;
+          }, { isolationLevel: "Serializable" });
+          if (!newRun) continue;
 
           // Trigger pipeline execution via unified runner
           const { executePipelineRun } = await import("@/lib/cicd-runner");

@@ -189,11 +189,8 @@ class ChatRunnerManager {
       }
 
       // Load user's GitHub integration
-      let githubToken: string | null = null;
       let githubUsername = "";
       try {
-        const { getEffectiveGitHubToken } = await import("@/lib/github-app");
-        githubToken = await getEffectiveGitHubToken(userId);
         const integration = await prisma.rayGithubIntegration.findFirst({
           where: { userId },
         });
@@ -225,7 +222,6 @@ class ChatRunnerManager {
         mode: "web",
         userId,
         monitorProjects,
-        githubToken: githubToken || undefined,
         githubUsername: githubUsername || undefined,
         executionMode: executionMode || undefined,
       });

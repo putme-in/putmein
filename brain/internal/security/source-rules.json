@@ -1,0 +1,165 @@
+[
+  {
+    "id": "PY-DJANGO-DEBUG",
+    "title": "Django debug enabled",
+    "extensions": [
+      ".py"
+    ],
+    "basename": "settings.py",
+    "pattern": "(?m)^\\s*DEBUG\\s*=\\s*True\\b",
+    "severity": "warning",
+    "category": "owasp",
+    "description": "Pattern-based review required; this check does not prove exploitability.",
+    "recommendation": "Disable DEBUG in production settings."
+  },
+  {
+    "id": "PY-FLASK-DEBUG",
+    "title": "Flask debug server enabled",
+    "extensions": [
+      ".py"
+    ],
+    "basename": "",
+    "pattern": "\\.run\\([^\\n]*debug\\s*=\\s*True",
+    "severity": "warning",
+    "category": "owasp",
+    "description": "Pattern-based review required; this check does not prove exploitability.",
+    "recommendation": "Use a production WSGI server with debug disabled."
+  },
+  {
+    "id": "PY-UNSAFE-LOAD",
+    "title": "Unsafe Python deserialization",
+    "extensions": [
+      ".py"
+    ],
+    "basename": "",
+    "pattern": "\\b(?:pickle\\.loads?|yaml\\.load)\\s*\\(",
+    "severity": "warning",
+    "category": "owasp",
+    "description": "Pattern-based review required; this check does not prove exploitability.",
+    "recommendation": "Never deserialize untrusted input; use safe YAML loaders and validated formats."
+  },
+  {
+    "id": "JS-DYNAMIC-EVAL",
+    "title": "Dynamic JavaScript evaluation",
+    "extensions": [
+      ".js",
+      ".jsx",
+      ".ts",
+      ".tsx",
+      ".mjs",
+      ".cjs"
+    ],
+    "basename": "",
+    "pattern": "\\b(?:eval|Function)\\s*\\(",
+    "severity": "warning",
+    "category": "owasp",
+    "description": "Pattern-based review required; this check does not prove exploitability.",
+    "recommendation": "Avoid executing untrusted strings; validate and use structured data."
+  },
+  {
+    "id": "PHP-DYNAMIC-EVAL",
+    "title": "Dynamic PHP evaluation",
+    "extensions": [
+      ".php"
+    ],
+    "basename": "",
+    "pattern": "\\beval\\s*\\(",
+    "severity": "warning",
+    "category": "owasp",
+    "description": "Pattern-based review required; this check does not prove exploitability.",
+    "recommendation": "Remove execution of user-controlled PHP code."
+  },
+  {
+    "id": "GO-TLS-VERIFY",
+    "title": "Go TLS verification disabled",
+    "extensions": [
+      ".go"
+    ],
+    "basename": "",
+    "pattern": "InsecureSkipVerify\\s*:\\s*true",
+    "severity": "warning",
+    "category": "owasp",
+    "description": "Pattern-based review required; this check does not prove exploitability.",
+    "recommendation": "Validate server certificates; do not disable TLS verification."
+  },
+  {
+    "id": "RUBY-UNSAFE-LOAD",
+    "title": "Unsafe Ruby object loading",
+    "extensions": [
+      ".rb"
+    ],
+    "basename": "",
+    "pattern": "\\b(?:Marshal|YAML)\\.load\\s*\\(",
+    "severity": "warning",
+    "category": "owasp",
+    "description": "Pattern-based review required; this check does not prove exploitability.",
+    "recommendation": "Avoid loading untrusted serialized objects; use safe parsers."
+  },
+  {
+    "id": "JAVA-PROCESS",
+    "title": "Java process execution",
+    "extensions": [
+      ".java",
+      ".kt"
+    ],
+    "basename": "",
+    "pattern": "Runtime\\.getRuntime\\(\\)\\.exec\\s*\\(",
+    "severity": "warning",
+    "category": "owasp",
+    "description": "Pattern-based review required; this check does not prove exploitability.",
+    "recommendation": "Review input validation and avoid shell interpolation."
+  },
+  {
+    "id": "DOTNET-DESERIALIZE",
+    "title": "Legacy .NET binary deserialization",
+    "extensions": [
+      ".cs"
+    ],
+    "basename": "",
+    "pattern": "\\bBinaryFormatter\\b",
+    "severity": "warning",
+    "category": "owasp",
+    "description": "Pattern-based review required; this check does not prove exploitability.",
+    "recommendation": "Replace unsafe binary deserialization with validated data formats."
+  },
+  {
+    "id": "RUST-TLS-VERIFY",
+    "title": "Rust TLS verification disabled",
+    "extensions": [
+      ".rs"
+    ],
+    "basename": "",
+    "pattern": "danger_accept_invalid_certs\\s*\\(\\s*true",
+    "severity": "warning",
+    "category": "owasp",
+    "description": "Pattern-based review required; this check does not prove exploitability.",
+    "recommendation": "Keep TLS certificate validation enabled."
+  },
+  {
+    "id": "LARAVEL-DEBUG",
+    "title": "Laravel debug enabled",
+    "extensions": [
+      ".env"
+    ],
+    "basename": "",
+    "pattern": "(?im)^\\s*APP_DEBUG\\s*=\\s*true\\b",
+    "severity": "warning",
+    "category": "owasp",
+    "description": "Pattern-based review required; this check does not prove exploitability.",
+    "recommendation": "Disable application debug mode in production."
+  },
+  {
+    "id": "SHELL-REMOTE-EXEC",
+    "title": "Remote shell script execution",
+    "extensions": [
+      ".sh",
+      ".bash"
+    ],
+    "basename": "",
+    "pattern": "\\b(?:curl|wget)\\b[^\\n]*\\|\\s*(?:bash|sh)\\b",
+    "severity": "warning",
+    "category": "owasp",
+    "description": "Pattern-based review required; this check does not prove exploitability.",
+    "recommendation": "Pin and verify downloaded content before executing it."
+  }
+]

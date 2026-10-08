@@ -41,11 +41,18 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
 // (id is the projectId here, not alertId)
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const expected = process.env.BRAIN_INTERNAL_SECRET;
+    if (!expected || req.headers.get("x-brain-secret") !== expected) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     const { id: projectId } = await params;
     const body = await req.json();
-    const { severity, message, rawLog } = body;
+    const { severity, message, rawLog, id, createdAt } = body;
+    const detectedAt = typeof createdAt === "string" ? new Date(createdAt) : new Date();
+    if (!Number.isFinite(detectedAt.getTime()) || detectedAt.getTime() > Date.now() + 300000) return NextResponse.json({ error: "Invalid detection time" }, { status: 400 });
+    if (typeof id !== "string" || !/^[a-f0-9-]{36}$/.test(id)) return NextResponse.json({ error: "Valid event ID required" }, { status: 400 });
 
-    if (!severity || !message) {
+    if (!["info", "warn", "error", "critical", "vulnerable"].includes(severity) || typeof message !== "string" || !message.trim() || message.length > 4000 || (rawLog != null && (typeof rawLog !== "string" || rawLog.length > 32768))) {
       return NextResponse.json({ error: "severity and message required" }, { status: 400 });
     }
 
@@ -55,8 +62,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    const alert = await prisma.rayMonitorAlert.create({
-      data: { projectId, severity, message, rawLog: rawLog || "" },
+    const existing = await prisma.rayMonitorAlert.findUnique({ where: { id }, select: { projectId: true } });
+    if (existing && existing.projectId !== projectId) return NextResponse.json({ error: "Event conflict" }, { status: 409 });
+    const alert = await prisma.rayMonitorAlert.upsert({
+      where: { id }, update: {},
+      create: { id, projectId, severity, message, rawLog: rawLog || "", createdAt: detectedAt },
     });
 
     return NextResponse.json({ alert }, { status: 201 });

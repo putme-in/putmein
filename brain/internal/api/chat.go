@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -61,24 +62,24 @@ type chatRequest struct {
 // ── Tool tag regexes (same as agent package) ─────────────────────────────────
 
 var (
-	chatExecRe       = regexp.MustCompile(`(?s)<exec>(.*?)</exec>`)
-	chatReadRe       = regexp.MustCompile(`(?s)<read_file>(.*?)</read_file>`)
-	chatWriteRe      = regexp.MustCompile(`(?s)<write_file path="([^"]+)">(.*?)</write_file>`)
-	chatListRe       = regexp.MustCompile(`(?s)<list_dir>(.*?)</list_dir>`)
-	chatMkdirRe      = regexp.MustCompile(`(?s)<create_dir>(.*?)</create_dir>`)
-	chatDeleteRe     = regexp.MustCompile(`(?s)<delete_file>(.*?)</delete_file>`)
+	chatExecRe   = regexp.MustCompile(`(?s)<exec>(.*?)</exec>`)
+	chatReadRe   = regexp.MustCompile(`(?s)<read_file>(.*?)</read_file>`)
+	chatWriteRe  = regexp.MustCompile(`(?s)<write_file path="([^"]+)">(.*?)</write_file>`)
+	chatListRe   = regexp.MustCompile(`(?s)<list_dir>(.*?)</list_dir>`)
+	chatMkdirRe  = regexp.MustCompile(`(?s)<create_dir>(.*?)</create_dir>`)
+	chatDeleteRe = regexp.MustCompile(`(?s)<delete_file>(.*?)</delete_file>`)
 	// monitor_add: matches self-closing or open tag, with or without interval, flexible whitespace
 	chatMonitorAddRe = regexp.MustCompile(`<monitor_add[^>]*name="([^"]+)"[^>]*path="([^"]+)"[^>]*>`)
 	// deploy: matches <deploy ...> with name and path attributes in any order
-	chatDeployTagRe  = regexp.MustCompile(`<deploy\s+([^>]+)>?`)
-	chatNameAttrRe   = regexp.MustCompile(`name="([^"]+)"`)
-	chatPathAttrRe   = regexp.MustCompile(`path="([^"]+)"`)
-	chatPortAttrRe   = regexp.MustCompile(`port="?(\d+)"?`)
-	chatCheckPortsRe = regexp.MustCompile(`(?s)<check_ports\s*/?>`)
-	chatSetDomainsRe = regexp.MustCompile(`<set_domains\s+([^>]+)>?`)
+	chatDeployTagRe   = regexp.MustCompile(`<deploy\s+([^>]+)>?`)
+	chatNameAttrRe    = regexp.MustCompile(`name="([^"]+)"`)
+	chatPathAttrRe    = regexp.MustCompile(`path="([^"]+)"`)
+	chatPortAttrRe    = regexp.MustCompile(`port="?(\d+)"?`)
+	chatCheckPortsRe  = regexp.MustCompile(`(?s)<check_ports\s*/?>`)
+	chatSetDomainsRe  = regexp.MustCompile(`<set_domains\s+([^>]+)>?`)
 	chatProjectAttrRe = regexp.MustCompile(`project="([^"]+)"`)
 	chatDomainsAttrRe = regexp.MustCompile(`domains="([^"]+)"`)
-	chatPlanTagRe    = regexp.MustCompile(`(?s)<plan(?:\s+title="([^"]+)")?\s*>(.*?)</plan>`)
+	chatPlanTagRe     = regexp.MustCompile(`(?s)<plan(?:\s+title="([^"]+)")?\s*>(.*?)</plan>`)
 )
 
 // detectTool parses text for any tool tag and returns (toolName, cmdOrPath, found)
@@ -187,12 +188,7 @@ func runDetectedTool(ctx context.Context, text, toolName, arg, userID, githubTok
 	switch toolName {
 	case "exec":
 		cmdToRun := arg
-		if githubToken != "" && strings.Contains(cmdToRun, "github.com/") {
-			if !strings.Contains(cmdToRun, "x-access-token:") && !strings.Contains(cmdToRun, "@github.com") {
-				cmdToRun = strings.ReplaceAll(cmdToRun, "https://github.com/", fmt.Sprintf("https://x-access-token:%s@github.com/", githubToken))
-				cmdToRun = strings.ReplaceAll(cmdToRun, "http://github.com/", fmt.Sprintf("https://x-access-token:%s@github.com/", githubToken))
-			}
-		}
+
 		out, err := agent.ExecuteWithStream(ctx, cmdToRun, onProgress)
 		if err != nil {
 			return fmt.Sprintf("Error running command: %v\n%s", err, out)
@@ -255,35 +251,46 @@ func runDetectedTool(ctx context.Context, text, toolName, arg, userID, githubTok
 		}
 		return res
 	case "deploy":
-		// arg is "name|path|port"
 		parts := strings.SplitN(arg, "|", 3)
-		name := parts[0]
-		path := ""
+		source := ""
 		if len(parts) > 1 {
-			path = parts[1]
+			source = parts[1]
 		}
-		port := 0
-		if len(parts) > 2 {
-			port, _ = strconv.Atoi(parts[2])
+		if strings.HasPrefix(source, "https://") {
+			parsed, err := url.Parse(source)
+			if err != nil || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+				source = ""
+			}
+		} else if !filepath.IsAbs(source) {
+			source = ""
 		}
-		res, err := deploy.ExecuteDeployment(ctx, deploy.DeployRequest{
-			UserID:      userID,
-			Name:        name,
-			ProjectPath: path,
-			HostPort:    port,
-		}, func(ev deploy.DeployStepEvent) {
-			if onProgress != nil {
-				if ev.LogDelta != "" {
-					onProgress(ev.LogDelta)
-				} else if ev.Message != "" {
-					onProgress(fmt.Sprintf("[%s] %s\n", strings.ToUpper(string(ev.Step)), ev.Message))
+		proposal := map[string]any{"name": parts[0], "source": source}
+		settings := map[string]any{}
+		if len(parts) > 2 && parts[2] != "0" {
+			if port, err := strconv.Atoi(parts[2]); err == nil && port > 0 && port <= 65535 {
+				settings["hostPort"] = port
+			}
+		}
+		if match := regexp.MustCompile(`(?s)<deployment_settings>(.*?)</deployment_settings>`).FindStringSubmatch(text); len(match) > 1 {
+			var supplied map[string]any
+			if len(match[1]) > 16384 || json.Unmarshal([]byte(match[1]), &supplied) != nil {
+				return "Error: deployment settings must be a valid JSON object."
+			}
+			for _, key := range []string{"branch", "appDirectory", "framework", "buildCommand", "startCommand", "hostPort", "containerPort", "projectUrl", "dockerEnabled", "routingMode", "healthCheck"} {
+				if value, ok := supplied[key]; ok {
+					settings[key] = value
 				}
 			}
-		})
-		if err != nil {
-			return fmt.Sprintf("Deployment error: %v", err)
 		}
-		return fmt.Sprintf("Application %q successfully deployed in Docker container %s at %s", res.Name, res.ContainerName, res.DeployURL)
+		if len(settings) > 0 {
+			proposal["setup"] = settings
+		}
+		data, _ := json.Marshal(proposal)
+		result := "RAY_DEPLOYMENT_SETUP:" + string(data)
+		if onProgress != nil {
+			onProgress(result)
+		}
+		return result
 	case "check_ports":
 		claimed, _ := deploy.GetUsedPortsMap()
 		nextFree, _ := deploy.FindGuaranteedFreePort(0, "")
@@ -347,7 +354,7 @@ func runDetectedTool(ctx context.Context, text, toolName, arg, userID, githubTok
 			}
 			return fmt.Sprintf("Failed to update domains (status %d): %s", resp.StatusCode, string(bodyBytes))
 		}
-		res := fmt.Sprintf("Successfully assigned domains [%s] to project %q. Inbound requests on these domains will reverse-proxy directly to the project container.", domains, projectNameOrID)
+		res := fmt.Sprintf("Successfully assigned domains [%s] to project %q. These references do not provision DNS or certificates. Configure managed HTTPS in project deployment setup.", domains, projectNameOrID)
 		if onProgress != nil {
 			onProgress(res)
 		}
@@ -357,7 +364,9 @@ func runDetectedTool(ctx context.Context, text, toolName, arg, userID, githubTok
 		parts := strings.SplitN(arg, "|", 2)
 		name := parts[0]
 		path := ""
-		if len(parts) > 1 { path = parts[1] }
+		if len(parts) > 1 {
+			path = parts[1]
+		}
 		if err := monitor.AddProjectFromChat(userID, name, path, 30); err != nil {
 			errStr := fmt.Sprintf("Error adding to monitor: %v", err)
 			if onProgress != nil {
@@ -439,12 +448,24 @@ func injectMonitorContext(ctx context.Context, userInput string, reqProjects []m
 		}
 
 		if existing, ok := projectsMap[rp.ID]; ok {
-			if rp.Memory != "" { existing.Memory = rp.Memory }
-			if rp.Status != "" { existing.Status = rp.Status }
-			if rp.ManagedPid != 0 { existing.ManagedPid = rp.ManagedPid }
-			if rp.ManagedLogFile != "" { existing.ManagedLogFile = rp.ManagedLogFile }
-			if rp.ProjectUrl != "" { existing.ProjectUrl = rp.ProjectUrl }
-			if len(lpaths) > 0 { existing.LogPaths = lpaths }
+			if rp.Memory != "" {
+				existing.Memory = rp.Memory
+			}
+			if rp.Status != "" {
+				existing.Status = rp.Status
+			}
+			if rp.ManagedPid != 0 {
+				existing.ManagedPid = rp.ManagedPid
+			}
+			if rp.ManagedLogFile != "" {
+				existing.ManagedLogFile = rp.ManagedLogFile
+			}
+			if rp.ProjectUrl != "" {
+				existing.ProjectUrl = rp.ProjectUrl
+			}
+			if len(lpaths) > 0 {
+				existing.LogPaths = lpaths
+			}
 			existing.Alerts = alertStrs
 		} else {
 			projectsMap[rp.ID] = &unifiedProj{
@@ -488,11 +509,17 @@ func injectMonitorContext(ctx context.Context, userInput string, reqProjects []m
 				if len(cParts) >= 2 {
 					cName := cParts[1]
 					image := ""
-					if len(cParts) > 2 { image = cParts[2] }
+					if len(cParts) > 2 {
+						image = cParts[2]
+					}
 					status := ""
-					if len(cParts) > 3 { status = cParts[3] }
+					if len(cParts) > 3 {
+						status = cParts[3]
+					}
 					ports := ""
-					if len(cParts) > 4 { ports = cParts[4] }
+					if len(cParts) > 4 {
+						ports = cParts[4]
+					}
 					portInfo := ports
 					if ports != "" {
 						if strings.Contains(ports, "->") {
@@ -665,7 +692,7 @@ func injectPortRegistryContext(userInput string, reqProjects []monitorProjectDTO
 	sb.WriteString("  * You can assign or change domains for any project using: <set_domains project=\"project-name\" domains=\"http://app.sslip.io, https://custom.com\"/>\n")
 	sb.WriteString("  * The first domain listed is the primary URL used by the dashboard and \"Open App\" buttons.\n")
 	sb.WriteString("  * NEVER reuse an already registered domain for another project; duplicate domains are rejected.\n")
-	sb.WriteString("  * When deploying with <deploy name=\"...\" path=\"...\">, the deployment engine automatically provisions a domain or port based on the active routing mode.\n")
+	sb.WriteString("  * When deploying with <deploy name=\"...\" path=\"...\">, the deployment engine uses direct-port access. Configure managed HTTPS and health checks in project deployment setup.\n")
 
 	return userInput + sb.String()
 }
@@ -720,6 +747,7 @@ func chatStreamHandler(w http.ResponseWriter, r *http.Request) {
 	deployDir := agent.GetDeploymentsDir()
 	userInput += fmt.Sprintf("\n\n[DEPLOYMENT DIRECTORY CONFIGURATION]\n- Active base deployments directory: `%s`\n- When cloning repositories, creating workspaces, or deploying containers, ALWAYS use subfolders inside this base path (e.g. `%s/<project-name>`).\n- Never create deployment project folders in random paths or the workspace root.", deployDir, deployDir)
 
+	userInput += "\nWhen working from an approved plan, return the same <plan title=\"...\"> checklist with completed items marked - [x] and unfinished items - [ ]. Update it after verified tool results and in your final response. Never mark deployment or health complete merely because setup was requested. Never claim the setup card is open without calling <deploy>.\n"
 	// Resolve execution mode ("plan" vs "action")
 	execMode := strings.ToLower(strings.TrimSpace(req.ExecutionMode))
 	if execMode == "" {
@@ -735,7 +763,7 @@ func chatStreamHandler(w http.ResponseWriter, r *http.Request) {
 	if execMode == "plan" {
 		userInput += "- You are currently in PLAN MODE. You MUST FIRST output a structured plan using <plan title=\"...\">...</plan> containing goals, markdown checklists (- [ ] ...), and proposed file edits/commands.\n- In PLAN MODE, do NOT call mutating tools (<deploy>, destructive <exec>) until the user explicitly approves by clicking Proceed.\n"
 	} else {
-		userInput += "- You are currently in ACTION MODE: Directly execute requested tools, commands, and deployments without waiting for a planning gate.\n"
+		userInput += "- You are currently in ACTION MODE: Execute requested tools without a planning gate. Deployments still require the shared setup card; do not bypass it with shell commands.\n"
 	}
 
 	// Inject GitHub integration context if active
@@ -744,9 +772,7 @@ func chatStreamHandler(w http.ResponseWriter, r *http.Request) {
 		if req.GitHubUsername != "" {
 			ghInfo += fmt.Sprintf("\n- Connected GitHub user: @%s", req.GitHubUsername)
 		}
-		ghInfo += "\n- All repositories (public and private) from this user are fully authorized and authenticated."
-		ghInfo += "\n- Do NOT ask the user to make private repositories public or provide tokens. The backend automatically injects the access credentials for all `git clone` commands."
-		ghInfo += fmt.Sprintf("\n- To clone or deploy any repository, execute <exec>git clone https://github.com/... %s/<repo-name></exec>.", deployDir)
+		ghInfo += "\n- Saved GitHub credentials are resolved only by the shared deployment source preparation API. Open the setup card with the HTTPS repository URL. Do not clone using shell credentials or ask for tokens in chat."
 		userInput += ghInfo
 	}
 
@@ -841,6 +867,7 @@ func chatStreamHandler(w http.ResponseWriter, r *http.Request) {
 				"title":     planTitle,
 				"content":   planBody,
 				"checklist": checklist,
+				"status":    map[bool]string{true: "pending", false: "in_progress"}[execMode == "plan"],
 			})
 
 			// If in plan mode and this is not a proceed turn, pause for user approval
@@ -920,7 +947,7 @@ func chatStreamHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// ── Approval gate (non-autonomous only for dangerous/destructive commands) ──
-		if !autonomous && agent.RequiresApproval(toolName, cmdStr) {
+		if toolName != "deploy" && !autonomous && agent.RequiresApproval(toolName, cmdStr) {
 			// Stream prose before the tool tag (AI's reasoning)
 			if loc := toolTagRe.FindStringIndex(text); loc != nil {
 				prose := strings.TrimSpace(text[:loc[0]])
@@ -938,7 +965,9 @@ func chatStreamHandler(w http.ResponseWriter, r *http.Request) {
 				parts := strings.SplitN(toolArg, "|", 2)
 				pName := parts[0]
 				pPath := ""
-				if len(parts) > 1 { pPath = parts[1] }
+				if len(parts) > 1 {
+					pPath = parts[1]
+				}
 				approvalErr = ai.WriteSSEMonitorAddRequest(w, approvalID, pName, pPath, 30)
 			} else {
 				approvalErr = ai.WriteSSEApprovalRequest(w, approvalID, toolName, cmdStr)
@@ -985,7 +1014,12 @@ func chatStreamHandler(w http.ResponseWriter, r *http.Request) {
 
 		// ── NOW execute the tool (after permission obtained) ─────────────────
 		// Emit terminal start event before tool begins running
-		ai.WriteSSEToolStart(w, toolName, cmdStr, sysUser, sysHost)
+		displayTool := toolName
+		if toolName == "deploy" {
+			displayTool = "deployment_setup"
+			cmdStr = "Review deployment settings"
+		}
+		ai.WriteSSEToolStart(w, displayTool, cmdStr, sysUser, sysHost)
 		toolOutput := runDetectedTool(ctx, text, toolName, toolArg, userID, req.GitHubToken, func(chunk string) {
 			ai.WriteSSEToolOutput(w, chunk)
 		})
@@ -994,13 +1028,16 @@ func chatStreamHandler(w http.ResponseWriter, r *http.Request) {
 			exitCode = 1
 		}
 		ai.WriteSSEToolEnd(w, exitCode)
+		if toolName == "deploy" {
+			ai.WriteSSETextDelta(w, "Confirm the project name and optional application address below, then start deployment. Source inspection and framework settings are automatic; any additional non-secret settings you supplied are included. Nothing has been deployed yet. Keep private Git credentials in Settings.")
+			ai.WriteSSEFinish(w)
+			return
+		}
 
 		// Feed result back to AI and loop
 		feedbackMsg := fmt.Sprintf("[TOOL OUTPUT] %s result:\n%s\n\n[INSTRUCTION: When completing the user's request, provide a comprehensive, detailed final reply explaining the actions taken, technical configuration, status, and live URL. Do not provide a brief or single-line answer.]", toolName, toolOutput)
 		if toolName == "monitor_add" {
-			parts := strings.SplitN(toolArg, "|", 2)
-			pName := parts[0]
-			feedbackMsg = fmt.Sprintf("[TOOL OUTPUT] monitor_add result:\n%s\n\n[INSTRUCTION: Project %q has been successfully registered in the 24/7 monitor. NOW provide the COMPLETE DEPLOYMENT SUMMARY to the user:\n1. 🌐 Live URL: Clickable markdown link (e.g. http://localhost:<port> or http://<server-ip>:<port>)\n2. 🚢 Container Name & Status\n3. 🔌 Port Mapping (host_port:container_port)\n4. 🔑 Admin / Database credentials or URLs (e.g. /wp-admin, MySQL user & database name) if configured\n5. ⚡ Container health status\n6. 📊 Confirmation of monitor tracking at /monitor\nDO NOT just say 'it has been added to monitor'. Provide all actionable details and access links.]", toolOutput, pName)
+			feedbackMsg = fmt.Sprintf("[TOOL OUTPUT] monitor_add result:\n%s\n\nReport the registration result accurately. Registration does not prove deployment, health or a live URL. Never include credentials in the response.", toolOutput)
 		}
 		history = append(history, ai.HistoryEntry{Role: "user", Content: feedbackMsg})
 		userInput = feedbackMsg
@@ -1127,7 +1164,7 @@ func chatTUIHandler(w http.ResponseWriter, r *http.Request) {
 			cmdStr = toolName + " " + toolArg
 		}
 
-		if !autonomous && agent.RequiresApproval(toolName, cmdStr) {
+		if toolName != "deploy" && !autonomous && agent.RequiresApproval(toolName, cmdStr) {
 			notice := fmt.Sprintf("\n\n<yellow>Permission required to run %s. Use /settings to enable Autonomous Mode.</yellow>", toolName)
 			ai.WriteSSETextDelta(w, notice)
 			ai.WriteSSEFinish(w)
@@ -1135,7 +1172,12 @@ func chatTUIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Emit structured terminal events for TUI — same protocol as web
-		ai.WriteSSEToolStart(w, toolName, cmdStr, sysUser, sysHost)
+		displayTool := toolName
+		if toolName == "deploy" {
+			displayTool = "deployment_setup"
+			cmdStr = "Review deployment settings"
+		}
+		ai.WriteSSEToolStart(w, displayTool, cmdStr, sysUser, sysHost)
 		toolOutput := runDetectedTool(ctx, text, toolName, toolArg, "", req.GitHubToken, func(chunk string) {
 			ai.WriteSSEToolOutput(w, chunk)
 		})
@@ -1144,6 +1186,11 @@ func chatTUIHandler(w http.ResponseWriter, r *http.Request) {
 			exitCode = 1
 		}
 		ai.WriteSSEToolEnd(w, exitCode)
+		if toolName == "deploy" {
+			ai.WriteSSETextDelta(w, "Confirm the project name and optional application address below, then start deployment. Source inspection and framework settings are automatic; any additional non-secret settings you supplied are included. Nothing has been deployed yet. Keep private Git credentials in Settings.")
+			ai.WriteSSEFinish(w)
+			return
+		}
 
 		feedbackMsg := fmt.Sprintf("[TOOL OUTPUT] %s result:\n%s", toolName, toolOutput)
 		history = append(history, ai.HistoryEntry{Role: "user", Content: feedbackMsg})

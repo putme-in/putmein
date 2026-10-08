@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     };
 
     try {
-      const res = await fetch(`${BRAIN_URL}/v1/settings`, { signal: AbortSignal.timeout(1500) });
+      const res = await fetch(`${BRAIN_URL}/v1/settings`, { headers: { "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" }, signal: AbortSignal.timeout(1500) });
       if (res.ok) {
         const data = await res.json();
         autonomous = data.autonomous ?? false;
@@ -87,10 +87,14 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
+    if (body.securityChecksEnabled !== undefined) {
+      if (typeof body.securityChecksEnabled !== "boolean") return NextResponse.json({ error: "Security policy must be true or false." }, { status: 400 });
+      if (user.role?.toLowerCase() !== "admin") return NextResponse.json({ error: "Only an administrator can change the server-wide security gate." }, { status: 403 });
+    }
 
     const res = await fetch(`${BRAIN_URL}/v1/settings`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
       body: JSON.stringify(body),
     });
 

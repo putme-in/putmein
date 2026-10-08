@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 
 interface DiagnosisData {
   summary: string;
@@ -9,6 +10,7 @@ interface DiagnosisData {
   commands: string[];
   startCommand?: string;
   canAutoFix?: boolean;
+  securityScanId?: string;
 }
 
 const SparklesIcon = ({ size = 15, color = "#fff" }: { size?: number; color?: string }) => (
@@ -92,9 +94,10 @@ export default function DeployDiagnosisModal({
   }, [isOpen, runDiagnosis]);
 
   const handleApplyFixAndRedeploy = async () => {
+    if (!deploymentId || diagnosis?.securityScanId) return;
     setFixing(true);
     setFixError("");
-    setFixLogs("Initiating remediation and redeployment pipeline...\n");
+    setFixLogs("Requesting deployment retry...\n");
 
     try {
       if (deploymentId) {
@@ -111,7 +114,7 @@ export default function DeployDiagnosisModal({
         }
       }
 
-      setFixLogs((prev) => prev + "✓ Remediation and redeployment successfully dispatched to engine.\nClosing troubleshooter...");
+      setFixLogs((prev) => prev + "Deployment retry dispatched to engine.\nClosing troubleshooter...");
       setTimeout(() => {
         setFixing(false);
         onClose();
@@ -134,7 +137,7 @@ export default function DeployDiagnosisModal({
       }}
     >
       <div
-        className="w-full max-w-2xl rounded-2xl bg-[#0c0c0c] border border-white/[0.12] shadow-2xl flex flex-col max-h-[85vh] overflow-hidden"
+        className="w-full max-w-2xl rounded-2xl bg-[#0c0c0c] border border-white/[0.12] shadow-2xl flex flex-col max-h-[85vh] overflow-hidden p-[20px]"
         style={{ boxShadow: "0 20px 60px rgba(0,0,0,0.9)" }}
       >
         {/* Header */}
@@ -303,7 +306,7 @@ export default function DeployDiagnosisModal({
                 >
                   Close
                 </button>
-                <button
+                {diagnosis.securityScanId ? <Link href={`/security?scanId=${encodeURIComponent(diagnosis.securityScanId)}`} onClick={onClose} className="ray-btn-primary text-xs px-4 py-2">Review security findings</Link> : deploymentId ? <button
                   onClick={handleApplyFixAndRedeploy}
                   disabled={fixing}
                   className="bg-white text-black hover:bg-white/90 font-bold text-xs px-4 py-2 rounded-xl transition-all active:scale-95 shadow-lg flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
@@ -316,10 +319,10 @@ export default function DeployDiagnosisModal({
                   ) : (
                     <>
                       <SparklesIcon size={13} color="#000" />
-                      <span>Redeploy with Ray AI</span>
+                      <span>Retry deployment</span>
                     </>
                   )}
-                </button>
+                </button> : null}
               </div>
             </div>
           </div>

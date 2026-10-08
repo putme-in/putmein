@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyToken } from "@/lib/auth";
+import { readProjectSetup, validateSetupSource, deploymentSetupPayload } from "@/lib/project-setup-store";
+import { parseDeploymentEnvironment } from "@/lib/deployment-runtime";
+import { hostRuntimeHandle, requireStoppedRuntime } from "@/lib/host-runtime";
 import prisma from "@/lib/prisma";
 
 export const runtime = "nodejs";
+
+export const maxDuration = 900;
 
 const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
 
@@ -32,7 +37,7 @@ export async function POST(
   if (!deployment) {
     // Check if id is a pipelineRun ID
     const run = await prisma.rayPipelineRun.findFirst({
-      where: { id },
+      where: { id, pipeline: { userId: user.userId } },
       include: { pipeline: true },
     });
     if (run?.pipeline) {
@@ -111,24 +116,34 @@ export async function POST(
   if (action === "delete") {
     if (deployment.containerName) {
       try {
-        await fetch(`${BRAIN_URL}/v1/deploy/action`, {
+        const response = await fetch(`${BRAIN_URL}/v1/deploy/action`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
-          body: JSON.stringify({ action: "stop", container: deployment.containerName }),
+          body: JSON.stringify({ action: deployment.containerName.startsWith("process:") ? "remove" : "stop", container: deployment.containerName }),
         });
-      } catch { /* silent */ }
+        if (!response.ok) return NextResponse.json({ error: "Could not stop the application and remove its routing; deployment was not deleted." }, { status: 502 });
+      } catch {
+        return NextResponse.json({ error: "Brain is unavailable; deployment was not deleted." }, { status: 502 });
+      }
     }
     await prisma.rayDeployment.delete({ where: { id: targetDepId } });
     return NextResponse.json({ status: "deleted" });
   }
 
   if (action === "redeploy") {
+    let setup;
+    try {
+      const saved = deployment.projectId ? await readProjectSetup(user.userId, deployment.projectId) : null;
+      setup = saved ? validateSetupSource(saved) : null;
+      if (setup) { deploymentSetupPayload(setup); requireStoppedRuntime(deployment, setup.dockerEnabled); }
+    } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid setup" }, { status: 400 }); }
     // Reset status to building and record initial log
     await prisma.rayDeployment.update({
       where: { id: targetDepId },
       data: {
         status: "building",
-        buildLogs: `[REDEPLOY] Initiating container rebuild and redeployment for ${deployment.name}...\n`,
+        ...(setup && !setup.dockerEnabled && deployment.projectId ? { containerName: hostRuntimeHandle(user.userId, deployment.projectId), containerId: null, imageName: null, containerPort: null } : {}),
+        buildLogs: `[REDEPLOY] Initiating application rebuild and redeployment for ${deployment.name}...\n`,
         updatedAt: new Date(),
       },
     });
@@ -148,29 +163,31 @@ export async function POST(
 
     // Asynchronously trigger Brain build and consume stream to keep DB synced
     (async () => {
+      let runtimeRestored = false;
       try {
-        let envs: Record<string, string> | undefined;
-        if (deployment.envVars) {
-          try { envs = JSON.parse(deployment.envVars); } catch { /* ignore */ }
-        }
+        const envs = setup?.envVars ?? parseDeploymentEnvironment(deployment.envVars);
 
         const { getEffectiveGitHubToken } = await import("@/lib/github-app");
-        const effectiveToken = await getEffectiveGitHubToken(user.userId);
+        const effectiveToken = setup ? null : await getEffectiveGitHubToken(user.userId);
 
         const bRes = await fetch(`${BRAIN_URL}/v1/deploy`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
           body: JSON.stringify({
             id: deployment.id,
+            projectId: deployment.projectId,
+            previousRuntime: deployment.containerName,
             userId: user.userId,
             name: deployment.name,
-            projectPath: deployment.projectPath,
-            sourceType: deployment.sourceType,
-            repoUrl: deployment.repoUrl,
+            projectPath: setup?.projectPath || deployment.projectPath,
+            sourceType: "local", // Rebuild the saved snapshot; CI/CD fetches new source.
+            repoUrl: undefined,
             branch: deployment.branch,
             githubToken: effectiveToken || undefined,
             envVars: envs,
+            containerPort: deployment.containerPort || undefined,
             hostPort: deployment.hostPort && deployment.hostPort !== 4567 && deployment.hostPort !== 4500 ? deployment.hostPort : undefined,
+            ...(setup ? deploymentSetupPayload(setup) : {}),
           }),
         });
 
@@ -200,6 +217,7 @@ export async function POST(
         const decoder = new TextDecoder();
         let buffer = "";
 
+        let completed = false;
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
@@ -212,14 +230,23 @@ export async function POST(
               if (line.startsWith("data: ")) {
                 try {
                   const ev = JSON.parse(line.slice(6));
+              if (ev.step === "rollback" && ev.runtimeRestored && ev.activeDeploymentId === targetDepId) runtimeRestored = true;
                   if (ev.logDelta) logs += ev.logDelta;
                   else if (ev.message) logs += `[${(ev.step || "deploy").toUpperCase()}] ${ev.message}\n`;
 
                   if (ev.step === "complete") {
+                    completed = true;
+                    if (setup && deployment.projectId) await prisma.rayMonitorProject.update({ where: { id: deployment.projectId }, data: {
+                      projectPath: ev.projectPath || setup.projectPath, projectUrl: setup.projectUrl || ev.url, runCommand: setup.startCommand || null,
+                      ...(ev.runtime === "host" ? { managedPid: ev.managedPid, managedLogFile: ev.logFile, logPaths: JSON.stringify([ev.logFile]), logCommand: null } : { managedPid: null, managedLogFile: null, logPaths: JSON.stringify([`docker:${ev.container}`]), logCommand: null }),
+                    } });
                     await prisma.rayDeployment.update({
                       where: { id: targetDepId },
                       data: {
                         status: "healthy",
+                        ...(ev.runtime === "host" ? { containerId: null, imageName: null, containerPort: null } : {}),
+                        ...(setup ? { projectPath: ev.projectPath || setup.projectPath, envVars: JSON.stringify(setup.envVars) } : {}),
+                        ...(ev.containerPort ? { containerPort: ev.containerPort } : {}),
                         deployUrl: ev.url || deployment.deployUrl,
                         hostPort: ev.port || deployment.hostPort,
                         containerName: ev.container || deployment.containerName,
@@ -243,7 +270,7 @@ export async function POST(
                     await prisma.rayDeployment.update({
                       where: { id: targetDepId },
                       data: {
-                        status: "failed",
+                        status: runtimeRestored ? "healthy" : "failed",
                         buildLogs: logs || ev.message || "Redeployment failed.",
                         updatedAt: new Date(),
                       },
@@ -266,11 +293,12 @@ export async function POST(
             }
           }
         }
+        if (!completed) throw new Error("Deployment stream ended without completion.");
       } catch (err: unknown) {
         await prisma.rayDeployment.update({
           where: { id: targetDepId },
           data: {
-            status: "failed",
+            status: runtimeRestored ? "healthy" : "failed",
             buildLogs: `[ERROR] Redeploy exception: ${err instanceof Error ? err.message : "Unknown error"}`,
             updatedAt: new Date(),
           },
@@ -294,15 +322,13 @@ export async function POST(
   }
 
   if (action === "cancel") {
-    if (deployment.containerName) {
-      try {
-        await fetch(`${BRAIN_URL}/v1/deploy/action`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
-          body: JSON.stringify({ action: "stop", container: deployment.containerName }),
-        });
-      } catch { /* silent */ }
-    }
+    try {
+      const response = await fetch(`${BRAIN_URL}/v1/deploy/action`, {
+        method: "POST", headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
+        body: JSON.stringify({ action: "cancel", deploymentId: deployment.id, userId: deployment.userId }), signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) throw new Error();
+    } catch { return NextResponse.json({ error: "Could not confirm cancellation. Refresh the deployment and retry; its previous live application has not been stopped." }, { status: 409 }); }
 
     const cancellationLog = (deployment.buildLogs || "") + "\n[CANCELLED] Deployment was cancelled by user.\n";
     await prisma.rayDeployment.update({
@@ -353,13 +379,11 @@ export async function POST(
           headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
           body: JSON.stringify({ action, container: deployment.containerName }),
         });
-        if (!res.ok && action === "restart") {
-          return NextResponse.json({ error: "Action failed in container engine" }, { status: 500 });
+        if (!res.ok) {
+          return NextResponse.json({ error: "Deployment runtime could not complete this action" }, { status: 500 });
         }
       } catch (containerErr) {
-        if (action === "restart") {
-          return NextResponse.json({ error: "Container engine unreachable" }, { status: 500 });
-        }
+        return NextResponse.json({ error: "Deployment runtime is unreachable" }, { status: 502 });
       }
     }
     const newStatus = action === "restart" ? "healthy" : "stopped";

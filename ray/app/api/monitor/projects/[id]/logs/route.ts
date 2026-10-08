@@ -2,21 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { verifyToken } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import fs from "fs/promises";
+import { readLocalLogTail } from "@/lib/local-log-tail";
 
 const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
-
-// Read tail of file locally as fallback
-async function readLocalFileTail(path: string, linesCount: number): Promise<string> {
-  try {
-    const raw = await fs.readFile(path, "utf-8");
-    const all = raw.replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n");
-    if (all.length <= linesCount) return all.join("\n");
-    return all.slice(all.length - linesCount).join("\n");
-  } catch (err: unknown) {
-    throw new Error(err instanceof Error ? err.message : "Failed to read file");
-  }
-}
 
 // GET /api/monitor/projects/[id]/logs?lines=100
 export async function GET(
@@ -64,7 +52,7 @@ export async function GET(
     const existing = brainLogs.find((f) => f.path === targetPath);
     if (!existing || (!existing.content && !existing.error)) {
       try {
-        const content = await readLocalFileTail(targetPath, lines);
+        const content = await readLocalLogTail(targetPath, lines);
         if (existing) {
           existing.content = content;
         } else {
@@ -86,7 +74,7 @@ export async function GET(
   for (const p of dbLogPaths) {
     if (!brainLogs.some((l) => l.path === p)) {
       try {
-        const content = await readLocalFileTail(p, lines);
+        const content = await readLocalLogTail(p, lines);
         brainLogs.push({ path: p, content });
       } catch {
         // silent

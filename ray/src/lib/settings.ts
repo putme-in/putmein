@@ -22,6 +22,7 @@ export async function getDeploymentsDir(): Promise<string> {
   try {
     const res = await fetch(`${BRAIN_URL}/v1/settings`, {
       signal: AbortSignal.timeout(1000),
+      headers: { "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
     });
     if (res.ok) {
       const data = await res.json();

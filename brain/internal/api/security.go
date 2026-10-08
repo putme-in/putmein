@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"brain/server/internal/security"
 )
@@ -15,7 +17,7 @@ func securityScanHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req security.ScanRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64*1024)).Decode(&req); err != nil {
 		http.Error(w, "invalid JSON request body", http.StatusBadRequest)
 		return
 	}
@@ -25,7 +27,9 @@ func securityScanHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	report, err := security.DefaultService().ScanProject(r.Context(), req)
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Minute)
+	defer cancel()
+	report, err := security.DefaultService().ScanProject(ctx, req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -47,8 +51,8 @@ func securityRulesHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"rules": security.PredefinedRules,
-		"count": len(security.PredefinedRules),
+		"rules": security.AllRules(),
+		"count": len(security.AllRules()),
 	})
 }
 

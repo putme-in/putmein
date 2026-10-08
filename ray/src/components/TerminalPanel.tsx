@@ -1,5 +1,8 @@
 "use client";
 
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { parsePlanChecklist } from "@/lib/plan-checklist";
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import DeploymentNodeGraph, { DeployStepState } from "./DeploymentNodeGraph";
@@ -260,13 +263,14 @@ export default function TerminalPanel({
     const handlePlanUpdate = (e: Event) => {
       const detail = (e as CustomEvent<{ title?: string; content?: string; checklist?: string[]; status?: "pending" | "in_progress" | "completed" }>).detail;
       if (!detail) return;
-      const items = (detail.checklist || []).map((t) => ({ text: t, done: false }));
+      const parsed = parsePlanChecklist(detail.content || "");
+      const items = parsed.length ? parsed.map(item => ({ text: item.text, done: item.completed })) : (detail.checklist || []).map(t => ({ text: t, done: /^\[x\]/i.test(t) }));
       const newPlan: PlanItem = {
         id: Math.random().toString(36).substring(2, 9),
         title: detail.title || "Implementation Plan",
         content: detail.content || "",
         checklist: items,
-        status: detail.status || "pending",
+        status: items.length > 0 && items.every(item => item.done) ? "completed" : detail.status || "pending",
         createdAt: Date.now(),
       };
       setActivePlan(newPlan);
@@ -421,8 +425,11 @@ export default function TerminalPanel({
 
   /* ── Tool event listener (Terminal) ── */
   useEffect(() => {
+    let setupEvent = false;
     const handler = (e: Event) => {
       const ev = (e as CustomEvent<ToolLine>).detail;
+      if (ev.type === "tool-start") setupEvent = ev.tool === "deployment_setup";
+      if (setupEvent) return;
       const uid = `${ev.type}-${Date.now()}-${Math.random()}`;
 
       if (ev.type === "tool-start") {
@@ -483,7 +490,7 @@ export default function TerminalPanel({
       if (!toolBlocks || toolBlocks.length === 0) return;
 
       const newEntries: LogEntry[] = [];
-      toolBlocks.forEach((b, idx) => {
+      toolBlocks.filter(b => b.tool !== "deployment_setup").forEach((b, idx) => {
         const uId = b.id || `sync-${idx}-${Date.now()}`;
         newEntries.push({
           kind: "cmd",
@@ -1314,7 +1321,7 @@ export default function TerminalPanel({
                           : "bg-emerald-500/10 text-emerald-300 border border-emerald-500/20"
                       }`}
                     >
-                      {activePlan.status === "pending" ? "Awaiting Approval" : "In Progress"}
+                      {activePlan.status === "pending" ? "Awaiting Approval" : activePlan.status === "completed" ? "Completed" : "In Progress"}
                     </span>
                   </div>
                   <p className="text-[11.5px] text-white/40 leading-relaxed">
@@ -1374,7 +1381,7 @@ export default function TerminalPanel({
                           )}
                         </div>
                         <span className={`text-xs leading-relaxed transition-colors ${item.done ? "text-white/40 line-through" : "text-white/90"}`}>
-                          {item.text}
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
                         </span>
                       </div>
                     ))}
@@ -1398,8 +1405,8 @@ export default function TerminalPanel({
                     Copy
                   </button>
                 </div>
-                <div className="p-3.5 rounded-xl bg-[#080808] border border-white/[0.06] text-xs text-white/70 whitespace-pre-wrap leading-relaxed font-mono">
-                  {activePlan.content}
+                <div className="p-3.5 rounded-xl bg-[#080808] border border-white/[0.06] text-sm text-white/70 leading-relaxed [&_h3]:text-white [&_h3]:font-semibold [&_h3]:mt-5 [&_p]:my-2 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:pl-5 [&_ol]:list-decimal [&_code]:bg-white/5 [&_code]:px-1 [&_pre]:overflow-x-auto">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{activePlan.content}</ReactMarkdown>
                 </div>
               </div>
             </div>

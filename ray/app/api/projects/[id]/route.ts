@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import os from "os";
 import { verifyToken } from "@/lib/auth";
+import { readProjectSetup, saveProjectSetup, deleteProjectSetup } from "@/lib/project-setup-store";
+import { parseProjectSetup } from "@/lib/project-setup";
+import { hostRuntimeHandle } from "@/lib/host-runtime";
 import prisma from "@/lib/prisma";
 import { detectProjectStack } from "@/lib/project-detector";
 import { findDomainConflict, getPrimaryProjectUrl } from "@/lib/domains";
@@ -65,6 +68,9 @@ export async function GET(
       orderBy: { createdAt: "desc" },
     });
 
+    const hostMode = deployment?.containerName?.startsWith("process:") || false;
+    if (hostMode) container = null;
+
     // Extract port from projectUrl if available
     let urlPort: number | null = null;
     if (project.projectUrl) {
@@ -74,7 +80,7 @@ export async function GET(
 
     const resolvedPort = container?.port || urlPort || deployment?.hostPort || null;
 
-    if (!container && deployment) {
+    if (!container && deployment && !hostMode) {
       container = {
         id: deployment.containerId || deployment.id,
         name: deployment.containerName || `ray-${project.name.toLowerCase()}`,
@@ -129,7 +135,8 @@ export async function GET(
         ...project,
         container,
         deployment: deployment || null,
-        isDocker: !!container || stackInfo.hasDockerfile || (project.memory || "").toLowerCase().includes("docker") || (project.logPaths || "").includes("docker"),
+        isDocker: !hostMode && (!!container || stackInfo.hasDockerfile || (project.memory || "").toLowerCase().includes("docker") || (project.logPaths || "").includes("docker")),
+        runtime: hostMode ? "host" : "docker",
         framework: stackInfo.framework,
         frameworkSlug: stackInfo.frameworkSlug,
         language: stackInfo.language,
@@ -183,6 +190,7 @@ export async function PATCH(
       updateData.name = name.trim();
     }
     if (projectUrl !== undefined) {
+      if (projectUrl !== null && typeof projectUrl !== "string") return NextResponse.json({ error: "Invalid application URL" }, { status: 400 });
       const cleanUrl = projectUrl ? projectUrl.trim() : null;
       if (cleanUrl) {
         const otherProjects = await prisma.rayMonitorProject.findMany({
@@ -211,6 +219,12 @@ export async function PATCH(
       updateData.intervalSec = Number(intervalSec) || 30;
     }
 
+    const savedSetup = await readProjectSetup(user.userId, id);
+    if (savedSetup && updateData.projectUrl !== undefined) {
+      // The legacy domain editor supports a list; setup uses its primary address.
+      const next = parseProjectSetup({ ...savedSetup, projectUrl: getPrimaryProjectUrl(updateData.projectUrl as string) || "" });
+      await saveProjectSetup(user.userId, id, next);
+    }
     const updated = await prisma.rayMonitorProject.update({
       where: { id },
       data: updateData,
@@ -237,7 +251,7 @@ export async function PATCH(
     try {
       await fetch(`${BRAIN_URL}/v1/monitor/projects/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
         body: JSON.stringify(updateData),
         signal: AbortSignal.timeout(3000),
       });
@@ -255,6 +269,8 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let deletionToken: string | null = null;
+  let deletionCompleted = false;
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get("ray_token")?.value;
@@ -272,6 +288,16 @@ export async function DELETE(
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
+    const reservation = await fetch(`${BRAIN_URL}/v1/deploy/action`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
+      body: JSON.stringify({ action: "begin-delete", userId: user.userId, projectId: project.id }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!reservation.ok) return NextResponse.json({ error: "Another deployment or deletion is in progress. Finish it before deleting this project." }, { status: 409 });
+    deletionToken = (await reservation.json()).token;
+    if (!deletionToken) throw new Error("Deletion reservation was not returned");
+
     // 1. Collect all linked deployments and container names
     const deployments = await prisma.rayDeployment.findMany({
       where: {
@@ -285,12 +311,34 @@ export async function DELETE(
       },
     });
 
+    const hasHostRuntime = deployments.some(dep => dep.containerName?.startsWith("process:")) || Boolean(project.managedLogFile && /application-[a-f0-9]+\.log$/.test(project.managedLogFile));
+    if (hasHostRuntime) {
+      try {
+        const response = await fetch(`${BRAIN_URL}/v1/deploy/action`, {
+          method: "POST", headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
+          body: JSON.stringify({ action: "remove", deletionToken, container: hostRuntimeHandle(user.userId, project.id) }), signal: AbortSignal.timeout(15000),
+        });
+        if (!response.ok) throw new Error();
+      } catch { return NextResponse.json({ error: "Could not stop the host application. Project deletion was not started." }, { status: 502 }); }
+    }
+
+    // Remove managed domain references before any destructive Docker cleanup.
+    for (const container of new Set(deployments.map(dep => dep.containerName).filter((name): name is string => Boolean(name && !name.startsWith("process:"))))) {
+      try {
+        const response = await fetch(`${BRAIN_URL}/v1/deploy/action`, {
+          method: "POST", headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
+          body: JSON.stringify({ action: "unroute", deletionToken, container }), signal: AbortSignal.timeout(30000),
+        });
+        if (!response.ok) throw new Error();
+      } catch { return NextResponse.json({ error: "Could not remove application routing. Restore Brain/Caddy and retry deletion." }, { status: 502 }); }
+    }
+
     const containerNamesToKill = new Set<string>();
     const imageNamesToKill = new Set<string>();
 
     // Standard naming convention
     const cleanBaseName = project.name.toLowerCase().replace(/[^a-z0-9-_]/g, "");
-    if (cleanBaseName) {
+    if (cleanBaseName && !hasHostRuntime) {
       containerNamesToKill.add(`ray-${cleanBaseName}`);
       containerNamesToKill.add(cleanBaseName);
       imageNamesToKill.add(`ray-${cleanBaseName}:latest`);
@@ -298,7 +346,7 @@ export async function DELETE(
     }
 
     for (const dep of deployments) {
-      if (dep.containerName) containerNamesToKill.add(dep.containerName);
+      if (dep.containerName && !dep.containerName.startsWith("process:")) containerNamesToKill.add(dep.containerName);
       if (dep.containerId) containerNamesToKill.add(dep.containerId);
       if (dep.imageName) imageNamesToKill.add(dep.imageName);
     }
@@ -311,7 +359,7 @@ export async function DELETE(
     const path = await import("path");
 
     // 2a. Run docker compose down if compose file exists in project directory
-    if (project.projectPath && fs.existsSync(project.projectPath)) {
+    if (!hasHostRuntime && project.projectPath && fs.existsSync(project.projectPath)) {
       try {
         const hasCompose =
           fs.existsSync(path.join(project.projectPath, "docker-compose.yml")) ||
@@ -331,6 +379,8 @@ export async function DELETE(
       } catch { /* ignore compose errors */ }
     }
 
+    // Host projects only clean up explicitly linked old Docker resources.
+    if (!hasHostRuntime) {
     // 2b. Discover any active or stopped containers associated with this project name
     try {
       const { stdout: psOut } = await execAsync(
@@ -358,21 +408,14 @@ export async function DELETE(
         }
       }
     } catch { /* Docker daemon not available */ }
+    }
 
     // 2c. Force remove all discovered containers
     for (const cName of containerNamesToKill) {
       try {
         await execAsync(`docker rm -f ${cName}`);
       } catch { /* ignore */ }
-      // Also notify Brain container action endpoint
-      try {
-        await fetch(`${BRAIN_URL}/v1/containers/${encodeURIComponent(cName)}/action`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
-          body: JSON.stringify({ action: "remove" }),
-          signal: AbortSignal.timeout(2000),
-        });
-      } catch { /* ignore */ }
+
     }
 
     // 2d. Force remove associated Docker images, volumes, and networks
@@ -382,7 +425,7 @@ export async function DELETE(
       } catch { /* ignore */ }
     }
 
-    if (cleanBaseName) {
+    if (cleanBaseName && !hasHostRuntime) {
       try {
         const { stdout: volOut } = await execAsync(
           `docker volume ls -q --filter name=${cleanBaseName}`
@@ -407,7 +450,7 @@ export async function DELETE(
     }
 
     // 3. Stop managed PID if running
-    if (project.managedPid) {
+    if (project.managedPid && !hasHostRuntime) {
       try {
         process.kill(project.managedPid, "SIGTERM");
       } catch { /* process already dead */ }
@@ -507,10 +550,12 @@ export async function DELETE(
     });
 
     // RayMonitorProject
+    await deleteProjectSetup(user.userId, project.id);
     await prisma.rayMonitorProject.delete({
       where: { id: project.id },
     });
 
+    deletionCompleted = true;
     return NextResponse.json({
       ok: true,
       message: `Project ${project.name} and all linked resources deleted successfully.`,
@@ -518,5 +563,17 @@ export async function DELETE(
   } catch (err) {
     console.error("DELETE /api/projects/[id]:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
+  } finally {
+    if (deletionToken) {
+      try {
+        const finished = await fetch(`${BRAIN_URL}/v1/deploy/action`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-brain-secret": process.env.BRAIN_INTERNAL_SECRET || "" },
+          body: JSON.stringify({ action: "finish-delete", deletionToken, completed: deletionCompleted }),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!finished.ok) console.error("Project deletion reservation needs recovery; Brain rejected completion.");
+      } catch { console.error("Project deletion reservation needs recovery; Brain is unavailable."); }
+    }
   }
 }

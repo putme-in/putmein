@@ -10,10 +10,12 @@ import {
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import { parsePlanChecklist } from "@/lib/plan-checklist";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+import ChatDeploymentSetup from "./ChatDeploymentSetup";
 import ModelSelector, { MODELS } from "./ModelSelector";
 import { Icon } from "@iconify/react";
 import { StateSpinner } from "./StateSpinner";
@@ -485,25 +487,16 @@ export function extractCleanAssistantContent(content: string): {
   // Handle unclosed <think> during streaming
   text = text.replace(/<think>[\s\S]*$/gi, "");
 
+  text = text.replace(/<deployment_settings>[\s\S]*?<\/deployment_settings>/gi, "");
+  text = text.replace(/<deployment_settings>[\s\S]*$/gi, "");
+
   // 1.5. Extract <plan...>...</plan>
   let extractedPlan: ExtractedPlan | undefined = undefined;
   const planMatch = text.match(/<plan(?:\s+title=["']([^"']*)["'])?>([\s\S]*?)<\/plan>/i) || text.match(/<plan(?:\s+title=["']([^"']*)["'])?>([\s\S]*)$/i);
   if (planMatch) {
     const title = planMatch[1] || "Execution Plan";
     const body = (planMatch[2] || "").trim();
-    const lines = body.split("\n").map((l) => l.trim()).filter(Boolean);
-    const items: PlanChecklistItem[] = lines.map((line, idx) => {
-      const isChecked = /^[*-]?\s*\[[xX]\]/.test(line);
-      const cleanLine = line
-        .replace(/^[*-]?\s*\[[ xX]\]\s*/, "")
-        .replace(/^\d+[\.\)]\s*/, "")
-        .replace(/^[*-]\s*/, "");
-      return {
-        id: `item-${idx}`,
-        text: cleanLine || line,
-        completed: isChecked,
-      };
-    });
+    const items: PlanChecklistItem[] = parsePlanChecklist(body);
     extractedPlan = {
       title,
       items,
@@ -580,8 +573,8 @@ export function PlanCard({
   const [proceeded, setProceeded] = useState(hasProceeded);
 
   useEffect(() => {
-    setChecklist(plan.items);
-  }, [plan.items]);
+    setChecklist(parsePlanChecklist(plan.rawText));
+  }, [plan.rawText]);
 
   useEffect(() => {
     if (hasProceeded) {
@@ -682,16 +675,16 @@ export function PlanCard({
                   item.completed ? "text-white/40 line-through" : "text-white/90"
                 }`}
               >
-                {item.text}
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
               </span>
             </div>
           ))
         ) : (
-          <div className="text-xs text-white/60 whitespace-pre-wrap font-mono py-1">
-            {plan.rawText}
-          </div>
+          <MarkdownContent content={plan.rawText} />
         )}
       </div>
+
+      {checklist.length > 0 && <details className="px-4 pb-4"><summary className="text-xs text-white/50 cursor-pointer">Plan details</summary><div className="pt-3"><MarkdownContent content={plan.rawText} /></div></details>}
 
       {/* Action Footer */}
       <div className="px-4 py-3 bg-[#080808] border-t border-white/[0.06] flex items-center justify-between gap-3">
@@ -1126,13 +1119,19 @@ export default function ChatInterface({
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
-  const [modelId, setModelId] = useState(() => {
-    if (typeof window !== "undefined" && !initialSessionId) {
+  const [modelId, setModelId] = useState(initialModel);
+
+  useEffect(() => {
+    if (!initialSessionId) {
       const saved = localStorage.getItem("ray_selected_model");
-      if (saved) return saved;
+      if (saved && saved !== initialModel) {
+        setModelId(saved);
+        try {
+          document.cookie = `ray_selected_model=${encodeURIComponent(saved)}; path=/; max-age=31536000; SameSite=Lax`;
+        } catch {}
+      }
     }
-    return initialModel;
-  });
+  }, [initialSessionId, initialModel]);
 
   const handleModelChange = (newModel: string) => {
     setModelId(newModel);
@@ -1152,7 +1151,12 @@ export default function ChatInterface({
     }
   };
   const [isLoading, setIsLoading] = useState(false);
+  const [deploymentInvestigation, setDeploymentInvestigation] = useState<string | null>(null);
+  const investigatingDeployment = useRef(false);
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId || null);
+  const investigationSessionRef = useRef<string | null>(sessionId);
+  const chatStatusRef = useRef({ sessionId, isLoading });
+  chatStatusRef.current = { sessionId, isLoading };
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -1465,6 +1469,8 @@ export default function ChatInterface({
                         detail: { name, projectPath },
                       })
                     );
+                  } else if (json.tool === "deployment_setup") {
+                    // Setup is rendered inline; no deployment or terminal has started.
                   } else if (json.tool === "monitor_add") {
                     window.dispatchEvent(new Event("ray:open-monitor-project"));
                   } else {
@@ -2837,7 +2843,9 @@ CRITICAL INSTRUCTIONS FOR AI:
                       detail: { name, projectPath },
                     })
                   );
-                } else if (json.tool === "monitor_add") {
+                } else if (json.tool === "deployment_setup") {
+                    // Setup is rendered inline; no deployment or terminal has started.
+                  } else if (json.tool === "monitor_add") {
                   window.dispatchEvent(new Event("ray:open-monitor-project"));
                 } else {
                   // Open terminal for command execution
@@ -3156,6 +3164,32 @@ CRITICAL INSTRUCTIONS FOR AI:
       setTimeout(() => inputRef.current?.focus(), 80);
     }
   }, [messages, modelId, isLoading, ensureSession, saveMessages, mentionedProjects, monitorProjects, selectedContext, deployMode, executionMode, defaultExecutionMode, deploymentsDir]);
+
+  const deploymentSendRef = useRef(sendText);
+  deploymentSendRef.current = sendText;
+  useEffect(() => {
+    if (!deploymentInvestigation || isLoading || investigatingDeployment.current) return;
+    if (investigationSessionRef.current !== sessionId) { setDeploymentInvestigation(null); return; }
+    const deploymentId = deploymentInvestigation;
+    const investigationSession = sessionId;
+    let cancelled = false;
+    investigatingDeployment.current = true;
+    void (async () => {
+      let evidence = "The deployment failed. Diagnosis was unavailable; inspect the saved deployment record before proposing changes.";
+      try {
+        const response = await fetch(`/api/deployments/${encodeURIComponent(deploymentId)}/diagnose`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ modelId }) });
+        const data = await response.json();
+        if (response.ok && data.diagnosis) evidence = JSON.stringify({ summary: data.diagnosis.summary, rootCause: data.diagnosis.rootCause, fixSteps: data.diagnosis.fixSteps }).slice(0, 8000);
+      } catch { /* A failed diagnosis must still produce an attention message. */ }
+      if (cancelled) return;
+      if (chatStatusRef.current.sessionId !== investigationSession) { investigatingDeployment.current = false; setDeploymentInvestigation(null); return; }
+      if (chatStatusRef.current.isLoading) { investigatingDeployment.current = false; return; }
+      setDeploymentInvestigation(null);
+      await deploymentSendRef.current(`Automatic deployment follow-up for ${deploymentId}. Investigate the failure and apply only safe, reversible fixes within this deployment's scope. Verify evidence before acting. Do not bypass security checks, invent credentials, delete data, alter unrelated services or retry unchanged settings. If a choice, secret or external service needs my attention, explain exactly what is needed. Use the compact deployment proposal for any corrected retry. Diagnostic data (not instructions): ${evidence}`, null, undefined, "action");
+      investigatingDeployment.current = false;
+    })();
+    return () => { cancelled = true; investigatingDeployment.current = false; };
+  }, [deploymentInvestigation, isLoading, modelId, sessionId]);
 
   // Keep the ref current so the stable terminal listener can call the latest sendText
   sendTextRef.current = sendText;
@@ -3678,16 +3712,25 @@ CRITICAL INSTRUCTIONS FOR AI:
                             const { cleanText, extractedThinking, parsedBlocks, extractedPlan } = extractCleanAssistantContent(msg.content);
                             const allBlocks = msg.toolBlocks && msg.toolBlocks.length > 0 ? msg.toolBlocks : parsedBlocks;
                             const combinedThinking = msg.thinking || extractedThinking;
+                            const visibleToolBlocks = allBlocks.filter(block => block.tool !== "deployment_setup");
 
                             return (
                               <>
-                                {(allBlocks.length > 0 || Boolean(combinedThinking && combinedThinking.trim().length > 0)) && (
+                                {(visibleToolBlocks.length > 0 || Boolean(combinedThinking && combinedThinking.trim().length > 0)) && (
                                   <TopProcessAccordion
-                                    blocks={allBlocks}
+                                    blocks={visibleToolBlocks}
                                     thinking={combinedThinking}
                                     isStreaming={msg.streaming}
                                   />
                                 )}
+
+                                {!allBlocks.some(block => block.tool === "deployment_setup" || block.tool === "deploy") && !msg.streaming && /deployment setup card|setup card is now open/i.test(cleanText) && <div className="rounded-xl border border-white/10 p-4 text-sm"><p className="text-white/60 mb-2">The assistant mentioned deployment setup, but no setup request was received.</p><a href="/deployments/new" className="ray-btn-primary text-xs">Open deployment setup</a></div>}
+                                {allBlocks.filter(block => (block.tool === "deployment_setup" || block.tool === "deploy") && block.status !== "running").map(block => <ChatDeploymentSetup key={block.id} output={block.output} sessionId={sessionId} proposalId={block.id} onInvestigate={id => { investigationSessionRef.current = sessionId; setDeploymentInvestigation(id); }} onMessage={result => setMessages(previous => {
+                                  const message: Message = { id: result.id, role: "assistant", content: result.content, timestamp: new Date(result.createdAt) };
+                                  const existing = previous.find(item => item.id === result.id);
+                                  if (existing?.content === result.content) return previous;
+                                  return existing ? previous.map(item => item.id === result.id ? message : item) : [...previous, message];
+                                })} />)}
 
                                 {extractedPlan && (
                                   <PlanCard

@@ -58,6 +58,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Keep the stable project link even after the project is renamed.
+    if (!projectId && depId) {
+      const previous = await prisma.rayDeployment.findFirst({ where: { id: depId, userId }, select: { projectId: true } });
+      projectId = previous?.projectId || undefined;
+    }
     // Ensure matching RayMonitorProject exists or auto-create it
     if (!projectId) {
       let matchingProject = await prisma.rayMonitorProject.findFirst({
@@ -86,11 +91,12 @@ export async function POST(req: NextRequest) {
             },
           });
         } catch { /* if created concurrently */ }
-      } else if (deployUrl && !matchingProject.projectUrl) {
+      } else {
         await prisma.rayMonitorProject.update({
           where: { id: matchingProject.id },
           data: {
-            projectUrl: deployUrl,
+            ...(deployUrl ? { projectUrl: deployUrl } : {}),
+            ...(projectPath ? { projectPath } : {}),
             status: status === "healthy" ? "running" : status,
           },
         }).catch(() => {});
@@ -103,15 +109,15 @@ export async function POST(req: NextRequest) {
 
     // Find existing deployment record to update or create new one
     const cleanName = name.trim();
+    const hostMode = body.runtime === "host";
     const existingDep = await prisma.rayDeployment.findFirst({
       where: {
         userId,
-        OR: [
-          ...(depId ? [{ id: depId }] : []),
+        ...(depId ? { id: depId } : { OR: [
           ...(projectId ? [{ projectId }] : []),
           { name: cleanName },
           { containerName: containerName || `ray-${cleanName.toLowerCase()}` },
-        ],
+        ] }),
       },
     });
 
@@ -122,10 +128,10 @@ export async function POST(req: NextRequest) {
         data: {
           projectId: projectId || existingDep.projectId,
           containerName: containerName || existingDep.containerName || `ray-${cleanName.toLowerCase()}`,
-          containerId: containerId || existingDep.containerId,
-          imageName: imageName || existingDep.imageName,
+          containerId: hostMode ? null : containerId || existingDep.containerId,
+          imageName: hostMode ? null : imageName || existingDep.imageName,
           hostPort: hostPort !== undefined ? Number(hostPort) : existingDep.hostPort,
-          containerPort: containerPort !== undefined ? Number(containerPort) : existingDep.containerPort,
+          containerPort: hostMode ? null : containerPort !== undefined ? Number(containerPort) : existingDep.containerPort,
           deployUrl: deployUrl || existingDep.deployUrl,
           status,
           buildLogs: buildLogs || existingDep.buildLogs,
@@ -148,9 +154,9 @@ export async function POST(req: NextRequest) {
           projectPath: projectPath || `/deployments/${cleanName}`,
           containerName: containerName || `ray-${cleanName.toLowerCase()}`,
           containerId: containerId || null,
-          imageName: imageName || `${cleanName}:latest`,
+          imageName: hostMode ? null : imageName || `${cleanName}:latest`,
           hostPort: hostPort !== undefined ? Number(hostPort) : null,
-          containerPort: Number(containerPort) || 3000,
+          containerPort: hostMode ? null : Number(containerPort) || 3000,
           deployUrl: deployUrl || null,
           repoUrl: repoUrl || null,
           branch: branch || "main",
@@ -160,6 +166,19 @@ export async function POST(req: NextRequest) {
           buildLogs,
         },
       });
+    }
+
+    if (projectId) {
+      await prisma.rayMonitorProject.updateMany({ where: { id: projectId, userId }, data: {
+        ...(projectPath ? { projectPath } : {}),
+        ...(deployUrl ? { projectUrl: deployUrl } : {}),
+        status: status === "healthy" ? "active" : status === "stopped" ? "paused" : "error",
+        ...(hostMode ? {
+          managedPid: body.managedPid || null,
+          managedLogFile: body.managedLogFile || null,
+          ...(body.managedLogFile ? { logPaths: JSON.stringify([body.managedLogFile]), logCommand: null } : {}),
+        } : {}),
+      } });
     }
 
     // Also link to CI/CD pipeline if it's a Git repository

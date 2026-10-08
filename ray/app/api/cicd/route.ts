@@ -4,15 +4,12 @@ import { verifyToken } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { detectProjectStack, detectContainerStack } from "@/lib/project-detector";
 import { ensureGitPipeline, detectGitRemoteUrl } from "@/lib/cicd-sync";
-import { validateGithubRepoUrl } from "@/lib/github-url";
+import { validateGitRepoUrl, supportsGitHubPush, redactGitUrl } from "@/lib/git-url";
 import { isValidGitBranch } from "@/lib/github-webhook";
 import { validateTcpPort } from "@/lib/port-validator";
 
 // Helper to strip internal access tokens from repo URLs for clean presentation
-function sanitizeRepoUrl(url: string | null | undefined): string {
-  if (!url) return "";
-  return url.replace(/https?:\/\/[^@]+@github\.com\//i, "https://github.com/");
-}
+const sanitizeRepoUrl = redactGitUrl;
 
 // GET /api/cicd — list pipelines for locally added git projects only
 export async function GET(req: NextRequest) {
@@ -29,13 +26,9 @@ export async function GET(req: NextRequest) {
       select: { id: true, name: true, projectPath: true, memory: true },
     });
 
-    const activeProjectNames = new Set<string>();
-    const activeProjectIds = new Set<string>();
     const projectMap = new Map<string, typeof monitorProjects[0]>();
 
     for (const p of monitorProjects) {
-      activeProjectNames.add(p.name.toLowerCase());
-      activeProjectIds.add(p.id);
       projectMap.set(p.id, p);
       projectMap.set(p.name.toLowerCase(), p);
       if (p.projectPath) {
@@ -55,22 +48,13 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Clean up any pipelines for projects that are NOT on the local machine
-    const orphanedPipelineIds: string[] = [];
-    const seenNames = new Set<string>();
+    // Saved pipelines can exist before their first local deployment. Listing must
+    // not delete them or merge separate projects just because their names match.
     const pipelines: any[] = [];
 
     for (const p of allPipelines) {
       const lowerName = p.name.toLowerCase();
-      const isLocal = activeProjectNames.has(lowerName) || (p.projectId && activeProjectIds.has(p.projectId));
-      if (!isLocal) {
-        orphanedPipelineIds.push(p.id);
-        continue;
-      }
-
-      if (!seenNames.has(lowerName)) {
-        seenNames.add(lowerName);
-
+      {
         const linkedProj = (p.projectId && projectMap.get(p.projectId)) || projectMap.get(lowerName);
         let stack = detectContainerStack(
           { name: p.name },
@@ -86,6 +70,7 @@ export async function GET(req: NextRequest) {
 
         pipelines.push({
           ...p,
+          autoDeploy: p.autoDeploy && supportsGitHubPush(p.repoUrl),
           framework: stack.framework,
           frameworkSlug: stack.frameworkSlug,
           language: stack.language,
@@ -95,13 +80,6 @@ export async function GET(req: NextRequest) {
           repoUrl: sanitizeRepoUrl(p.repoUrl),
         });
       }
-    }
-
-    // Delete orphaned non-local pipelines from database
-    if (orphanedPipelineIds.length > 0) {
-      prisma.rayPipeline.deleteMany({
-        where: { id: { in: orphanedPipelineIds } },
-      }).catch(() => {});
     }
 
     // Calculate aggregate metrics
@@ -145,9 +123,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Pipeline name is required" }, { status: 400 });
     }
 
-    const repoValidation = validateGithubRepoUrl(repoUrl);
+    const repoValidation = validateGitRepoUrl(repoUrl);
     if (!repoValidation.valid) {
-      return NextResponse.json({ error: repoValidation.error || "Invalid GitHub repository URL" }, { status: 400 });
+      return NextResponse.json({ error: repoValidation.error || "Invalid Git repository URL" }, { status: 400 });
     }
 
     const trimmedBranch = typeof branch === "string" ? branch.trim() : "main";
@@ -175,7 +153,7 @@ export async function POST(req: NextRequest) {
         name: trimmedName,
         repoUrl: repoValidation.normalizedUrl || String(repoUrl).trim(),
         branch: trimmedBranch || "main",
-        autoDeploy: !!autoDeploy,
+        autoDeploy: !!autoDeploy && supportsGitHubPush(repoUrl),
         port: allocatedPort,
         dockerfilePath: typeof dockerfilePath === "string" ? dockerfilePath.trim() || "Dockerfile" : "Dockerfile",
         status: "idle",

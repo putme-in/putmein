@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"brain/server/internal/deploy"
 	"brain/server/internal/monitor"
 )
 
@@ -233,6 +234,12 @@ func containerActionHandler(w http.ResponseWriter, r *http.Request) {
 	id := parts[0]
 	action := parts[1] // "start" | "stop" | "restart" | "remove"
 
+	release, lockErr := deploy.AcquireOperation()
+	if lockErr != nil {
+		http.Error(w, lockErr.Error(), http.StatusConflict)
+		return
+	}
+	defer release()
 	var cmd string
 	switch action {
 	case "start":
@@ -248,6 +255,12 @@ func containerActionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if action == "stop" || action == "remove" || action == "rm" {
+		if err := deploy.RemoveRuntimeRoute(r.Context(), id); err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+	}
 	out, err := monitor.RunLogCommand(r.Context(), cmd)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("action failed: %s (%v)", out, err), http.StatusInternalServerError)

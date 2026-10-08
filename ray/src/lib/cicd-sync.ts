@@ -3,6 +3,7 @@ import path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import prisma from "@/lib/prisma";
+import { normalizeGitUrl, supportsGitHubPush } from "./git-url";
 
 const execFileAsync = promisify(execFile);
 
@@ -71,20 +72,17 @@ export async function ensureGitPipeline(
 
   // If no Git remote is associated, do not add to CI/CD
   if (!repoUrl) return null;
+  // Do not persist embedded credentials or unsupported transports from imported remotes.
+  try { repoUrl = normalizeGitUrl(repoUrl); } catch { return null; }
 
   const branch = options?.branch || "main";
   const port = options?.port || 3000;
   const projectId = options?.projectId || null;
 
-  // Check if pipeline already exists for this user and repository
-  const existing = await prisma.rayPipeline.findFirst({
-    where: {
-      userId,
-      OR: [
-        { repoUrl },
-        { name: name.trim() },
-      ],
-    },
+  // A monorepo may contain several independently configured projects.
+  let existing = projectId ? await prisma.rayPipeline.findFirst({ where: { userId, projectId } }) : null;
+  if (!existing) existing = await prisma.rayPipeline.findFirst({
+    where: { userId, ...(projectId ? { projectId: null } : {}), OR: [{ repoUrl }, { name: name.trim() }] },
   });
 
   if (existing) {
@@ -92,6 +90,8 @@ export async function ensureGitPipeline(
       where: { id: existing.id },
       data: {
         repoUrl,
+        ...(options?.branch ? { branch: options.branch } : {}),
+        ...(options?.port ? { port: options.port } : {}),
         projectId: projectId || existing.projectId,
         updatedAt: new Date(),
       },
@@ -104,7 +104,7 @@ export async function ensureGitPipeline(
       name: name.trim(),
       repoUrl,
       branch,
-      autoDeploy: true,
+      autoDeploy: supportsGitHubPush(repoUrl),
       port,
       projectId,
       status: "idle",
@@ -151,7 +151,7 @@ export async function syncGithubReposToPipelines(userId: string): Promise<number
             name: repoName,
             repoUrl,
             branch: repo.default_branch || "main",
-            autoDeploy: true,
+            autoDeploy: supportsGitHubPush(repoUrl),
             port: 3000,
             status: "idle",
           },

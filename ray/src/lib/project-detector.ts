@@ -1,4 +1,5 @@
 import fs from "fs";
+import { detectFramework } from "./framework-detection";
 import path from "path";
 
 export interface DetectedStack {
@@ -181,9 +182,17 @@ export function detectProjectStack(
     containerImage?: string | null;
   }
 ): DetectedStack {
-  let framework = "Node.js";
-  let frameworkSlug = "node";
-  let language = "JavaScript";
+  if (projectPath) {
+    const detected = detectFramework(projectPath);
+    if (detected) return {
+      framework: detected.name, frameworkSlug: detected.slug, language: detected.language,
+      hasDockerfile: fs.existsSync(path.join(projectPath, "Dockerfile")),
+      ...getFrameworkVisuals(detected.slug),
+    };
+  }
+  let framework = "Unknown";
+  let frameworkSlug = "unknown";
+  let language = "Unknown";
   let hasDockerfile = false;
 
   const projName = (fallbackMetadata?.projectName || "").toLowerCase();

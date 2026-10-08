@@ -1,5 +1,7 @@
 "use client";
 
+import GitConnections from "@/components/GitConnections";
+
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -132,9 +134,9 @@ export default function GitHubPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="font-jersey text-3xl text-white tracking-wide">GitHub Integration</h1>
+          <h1 className="font-jersey text-3xl text-white tracking-wide">Git repositories</h1>
           <p className="text-xs mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>
-            Connect your GitHub account, manage repositories, setup automatic CI/CD pipelines, and deploy with Docker.
+            Connect GitHub or add an HTTPS Git source, then review setup before deployment.
           </p>
         </div>
         {status.connected ? (
@@ -159,6 +161,7 @@ export default function GitHubPage() {
         )}
       </div>
 
+      <GitConnections />
       {loading ? (
         <div className="flex items-center justify-center py-24 gap-2" style={{ color: "rgba(255,255,255,0.4)" }}>
           <SpinIcon /><span className="text-xs">Loading GitHub repositories…</span>
@@ -337,11 +340,11 @@ export default function GitHubPage() {
                   <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/[0.04]">
                     <div className="flex items-center gap-2">
                       <Link
-                        href={`/cicd`}
+                        href={`/deployments/new?repo=${encodeURIComponent(repo.cloneUrl || repo.htmlUrl)}&branch=${encodeURIComponent(repo.defaultBranch || "")}`}
                         className="ray-btn-ghost text-[11px] px-2.5 py-1 flex items-center gap-1.5 cursor-pointer"
                       >
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
-                        <span>CI/CD</span>
+                        <span>Set up deployment</span>
                       </Link>
 
                       <button

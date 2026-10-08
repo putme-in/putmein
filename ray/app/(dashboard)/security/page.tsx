@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import AdvancedSecuritySettings from "@/components/AdvancedSecuritySettings";
 import { Icon } from "@iconify/react";
 
 interface SecurityRule {
@@ -32,8 +33,8 @@ interface SecurityScanItem {
   id: string;
   projectId?: string | null;
   projectName: string;
-  trigger: "deploy_first_time" | "cicd_pipeline" | "manual";
-  status: "passed" | "warning" | "danger";
+  trigger: string;
+  status: "passed" | "warning" | "danger" | "error" | "skipped";
   dangerCount: number;
   warnCount: number;
   infoCount: number;
@@ -95,6 +96,18 @@ export default function SecurityPage() {
   // Rule search / filter
   const [ruleSearch, setRuleSearch] = useState("");
   const [ruleCategoryFilter, setRuleCategoryFilter] = useState<string>("all");
+
+  useEffect(() => {
+    const scanId = new URLSearchParams(window.location.search).get("scanId");
+    if (!scanId) return;
+    const controller = new AbortController();
+    void fetch(`/api/security/scans/${encodeURIComponent(scanId)}`, { signal: controller.signal, cache: "no-store" }).then(async response => {
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not open scan");
+      if (!controller.signal.aborted) { setSelectedScanReport(result.scan); setActiveReportTab("findings"); }
+    }).catch(error => { if (!controller.signal.aborted) setScanError(error instanceof Error ? error.message : "Could not open scan"); });
+    return () => controller.abort();
+  }, []);
 
   const fetchData = useCallback(async () => {
     setDataError(null);
@@ -235,7 +248,7 @@ export default function SecurityPage() {
               Security Center
             </h1>
             <span className="text-[10.5px] font-mono font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              AI Guardrails Active
+              Source Security Checks
             </span>
           </div>
           <p className="text-xs text-white/40 mt-1">
@@ -292,6 +305,8 @@ export default function SecurityPage() {
         </div>
       )}
 
+      <AdvancedSecuritySettings />
+
       {/* Stats Cards Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 mb-6">
         <div className="p-4.5 rounded-2xl bg-[#0c0c0c] border border-white/[0.08] shadow-lg">
@@ -309,7 +324,7 @@ export default function SecurityPage() {
             <Icon icon="lucide:check-circle-2" className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-bold text-emerald-400 mt-2 font-mono">{stats.cleanProjects}</div>
-          <div className="text-[11px] text-emerald-400/60 mt-1">Zero danger vulnerabilities</div>
+          <div className="text-[11px] text-emerald-400/60 mt-1">Passed implemented checks</div>
         </div>
 
         <div className="p-4.5 rounded-2xl bg-[#0c0c0c] border border-amber-500/20 shadow-lg">
@@ -373,7 +388,7 @@ export default function SecurityPage() {
                       </Link>
                       <button
                         onClick={() => {
-                          const matchingScan = scans.find((s) => s.projectName === run.pipeline?.name && s.status === "danger");
+                          const matchingScan = scans.find((s) => run.logs?.includes(`[SECURITY_SCAN] ${s.id}\n`) && s.status === "danger");
                           if (matchingScan) setSelectedScanReport(matchingScan);
                         }}
                         className="ray-btn-primary px-3 py-1.5 text-xs cursor-pointer"
@@ -472,7 +487,7 @@ export default function SecurityPage() {
 
                         {/* Status Badge */}
                         {latestScan ? (
-                          latestScan.status === "danger" ? (
+                          ["error", "skipped"].includes(latestScan.status) ? (<span className="text-xs text-amber-400">{latestScan.status === "error" ? "Scan incomplete" : "Not scanned (disabled)"}</span>) : latestScan.status === "danger" ? (
                             <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase font-mono bg-red-500/10 text-red-400 border border-red-500/20 flex items-center gap-1 shrink-0">
                               <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
                               Danger
@@ -660,7 +675,7 @@ export default function SecurityPage() {
                       className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                         scan.status === "danger"
                           ? "bg-red-500/10 text-red-400 border border-red-500/20"
-                          : scan.status === "warning"
+                          : scan.status !== "passed"
                           ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                           : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                       }`}
@@ -669,7 +684,7 @@ export default function SecurityPage() {
                         icon={
                           scan.status === "danger"
                             ? "lucide:shield-alert"
-                            : scan.status === "warning"
+                            : scan.status !== "passed"
                             ? "lucide:alert-triangle"
                             : "lucide:shield-check"
                         }
@@ -771,7 +786,7 @@ export default function SecurityPage() {
                     className={`text-xs font-bold uppercase font-mono px-2 py-0.5 rounded ${
                       selectedScanReport.status === "danger"
                         ? "bg-red-500/10 text-red-400 border border-red-500/20"
-                        : selectedScanReport.status === "warning"
+                        : selectedScanReport.status !== "passed"
                         ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
                         : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                     }`}
@@ -793,7 +808,7 @@ export default function SecurityPage() {
             </div>
 
             {/* DUAL CONSENT OVERRIDE BANNER IN MODAL IF DANGER */}
-            {selectedScanReport.status === "danger" && (
+            {selectedScanReport.status === "danger" && blockedPipelines.some(run => run.logs?.includes(`[SECURITY_SCAN] ${selectedScanReport.id}\n`)) && (
               <div className="p-4 mx-6 mt-4 rounded-2xl bg-red-500/[0.06] border border-red-500/30">
                 <div className="flex items-start gap-3">
                   <Icon icon="lucide:shield-alert" className="w-5 h-5 text-red-400 mt-0.5 shrink-0" />
@@ -802,7 +817,7 @@ export default function SecurityPage() {
                       High-Risk Release — Guardrail Override Required
                     </h4>
                     <p className="text-xs text-white/70 mt-1">
-                      Automated release has been blocked due to danger-level CVEs or exposed secrets. To authorize public deployment, complete the dual-consent confirmation below:
+                      Approval applies only to this source snapshot and scanner rules for ten minutes. New source is scanned again and cannot reuse this approval.
                     </p>
 
                     {overrideError && <div className="text-xs text-red-400 font-semibold mt-2">{overrideError}</div>}
@@ -827,7 +842,7 @@ export default function SecurityPage() {
                         {/* Confirmation 2: Armed Button */}
                         <button
                           onClick={() => {
-                            const blocked = blockedPipelines.find((b) => b.pipeline?.name === selectedScanReport.projectName);
+                            const blocked = blockedPipelines.find((b) => b.logs?.includes(`[SECURITY_SCAN] ${selectedScanReport.id}\n`));
                             if (blocked) {
                               handleAuthorizeOverride(blocked.id, blocked.pipelineId, selectedScanReport.id);
                             }
@@ -845,6 +860,7 @@ export default function SecurityPage() {
               </div>
             )}
 
+            {["error", "skipped"].includes(selectedScanReport.status) && <p role="status" className="px-6 py-3 text-sm text-amber-400">{selectedScanReport.status === "error" ? "This scan did not complete. Deployment is blocked until scanning succeeds or server policy is explicitly changed." : "Security checks were disabled. This is not a passing scan."}</p>}
             {/* Modal Tabs */}
             <div className="flex items-center gap-4 px-6 border-b border-white/[0.08] text-xs font-semibold pt-4">
               <button
