@@ -3724,7 +3724,7 @@ CRITICAL INSTRUCTIONS FOR AI:
                                   />
                                 )}
 
-                                {!allBlocks.some(block => block.tool === "deployment_setup" || block.tool === "deploy") && !msg.streaming && /deployment setup card|setup card is now open/i.test(cleanText) && <div className="rounded-xl border border-white/10 p-4 text-sm"><p className="text-white/60 mb-2">The assistant mentioned deployment setup, but no setup request was received.</p><a href="/deployments/new" className="ray-btn-primary text-xs">Open deployment setup</a></div>}
+                                {!allBlocks.some(block => block.tool === "deployment_setup" || block.tool === "deploy") && !msg.streaming && /deployment setup card|setup card is now open/i.test(cleanText) && <div className="rounded-xl border border-white/10 p-4 text-sm"><p className="text-white/60 mb-2">The assistant mentioned deployment setup, but no setup request was received.</p><Link href="/deployments/new" className="ray-btn-primary text-xs">Open deployment setup</Link></div>}
                                 {allBlocks.filter(block => (block.tool === "deployment_setup" || block.tool === "deploy") && block.status !== "running").map(block => <ChatDeploymentSetup key={block.id} output={block.output} sessionId={sessionId} proposalId={block.id} onInvestigate={id => { investigationSessionRef.current = sessionId; setDeploymentInvestigation(id); }} onMessage={result => setMessages(previous => {
                                   const message: Message = { id: result.id, role: "assistant", content: result.content, timestamp: new Date(result.createdAt) };
                                   const existing = previous.find(item => item.id === result.id);
