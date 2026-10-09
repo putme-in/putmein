@@ -29,7 +29,7 @@
     "test:installer": "node scripts/test-installer-safety.js"
   },
   "dependencies": {
-    "dotenv": "^16.6.1"
+    "dotenv": "^18.0.5"
   },
   "keywords": [
     "putmein",
