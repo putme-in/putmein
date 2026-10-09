@@ -6,7 +6,7 @@ export default async function ServersPage() {
   const stats = await getLiveSystemStats();
   
   const server = {
-    name: "localhost",
+    name: stats.name,
     ip: "127.0.0.1",
     status: "online",
     os: `${os.type()} ${os.release()}`,
@@ -84,7 +84,7 @@ export default async function ServersPage() {
                       {stat.label}
                     </span>
                     <span className="text-xs font-mono text-white">
-                      {stat.value}%
+                      {stat.value === null ? "N/A" : `${stat.value ?? 0}%`}
                     </span>
                   </div>
                   <div
@@ -94,11 +94,11 @@ export default async function ServersPage() {
                     <div
                       className="h-full rounded-full transition-all duration-700"
                       style={{
-                        width: `${stat.value}%`,
+                        width: `${stat.value === null ? "N/A" : `${stat.value ?? 0}%`}`,
                         background:
-                          stat.value < 60
+                          (stat.value ?? 0) < 60
                             ? "#0dd325"
-                            : stat.value < 80
+                            : (stat.value ?? 0) < 80
                             ? "#eab308"
                             : "#ef4444",
                       }}

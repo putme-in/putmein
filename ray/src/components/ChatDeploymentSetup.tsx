@@ -105,9 +105,10 @@ export default function ChatDeploymentSetup({ output, sessionId, proposalId, onM
       }
       const analysis = await post("/api/deploy/analyze", { sourceRoot, appDirectory: options.current.appDirectory || "." });
       const setup = parseProjectSetup({ ...options.current, sourceRoot, appDirectory: analysis.appDirectory,
-        framework: options.current.framework && options.current.framework !== "auto" ? options.current.framework : analysis.frameworkSlug || "auto",
+        framework: options.current.framework && options.current.framework !== "auto" ? options.current.framework : analysis.frameworkSlug && analysis.frameworkSlug !== "unknown" ? analysis.frameworkSlug : "auto",
         projectUrl: url, hostPort: options.current.hostPort || analysis.suggestedPort,
       });
+      if (setup.dockerEnabled && setup.framework === "auto" && !analysis.hasDockerfile) throw new Error(`No application entry point was detected. Tell chat the application subfolder or framework. Files found: ${(analysis.filesSummary || []).join(", ") || "none"}.`);
       setLogs(previous => previous + `Detected ${analysis.framework}. Using ${setup.dockerEnabled ? "Docker" : "host execution"} on port ${setup.hostPort}.\n`);
       const response = await fetch("/api/deploy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, projectPath: analysis.projectPath, preparedSource, sourceType: preparedSource ? "git" : "local", setup }) });
       if (!response.ok) { const data = await response.json(); throw new Error(data.error || "Deployment could not start"); }

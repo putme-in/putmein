@@ -145,9 +145,9 @@ export default function DeploymentNodeGraph({
   const activeUrl = getPrimaryProjectUrl(deployUrl, hostPort) || (hostPort ? `http://localhost:${hostPort}` : null);
 
   return (
-    <div className="flex flex-col h-full bg-[#080808] text-white select-none overflow-hidden font-sans">
+    <div className="flex flex-col h-full bg-card text-white select-none overflow-hidden font-sans">
       {/* ── Top Floating Island Header ── */}
-      <div className="mx-3 mt-3 mb-2 p-3.5 rounded-2xl bg-[#0e0e0e] border border-white/[0.08] flex items-center justify-between gap-3 flex-shrink-0">
+      <div className="mx-3 mt-3 mb-2 p-3.5 rounded-2xl bg-card border border-card-border flex items-center justify-between gap-3 flex-shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <div
             className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors ${
@@ -260,7 +260,7 @@ export default function DeploymentNodeGraph({
                     status === "success"
                       ? isSelected
                         ? "bg-[#111111] border-emerald-500/40"
-                        : "bg-[#0e0e0e] border-emerald-500/20 hover:border-emerald-500/35 hover:bg-[#121212]"
+                        : "bg-card border-emerald-500/20 hover:border-emerald-500/35 hover:bg-card"
                       : status === "running"
                       ? isSelected
                         ? "bg-[#161616] border-white/40"
@@ -269,7 +269,7 @@ export default function DeploymentNodeGraph({
                       ? "bg-[#130b0b] border-red-500/30 hover:border-red-500/40"
                       : isSelected
                       ? "bg-[#111111] border-white/20"
-                      : "bg-[#0a0a0a] border-white/[0.06] hover:border-white/12 hover:bg-[#0e0e0e]"
+                      : "bg-[#0a0a0a] border-card-border hover:border-white/12 hover:bg-card"
                   }`}
                 >
                   <div className="flex items-center gap-3">
@@ -390,7 +390,7 @@ export default function DeploymentNodeGraph({
 
       {/* ── Bottom Build Logs Drawer ── */}
       {buildLogs && (
-        <div className="mx-3 mb-3 p-3 rounded-2xl border border-white/[0.08] bg-[#0e0e0e] flex flex-col gap-1.5 flex-shrink-0">
+        <div className="mx-3 mb-3 p-3 rounded-2xl border border-card-border bg-card flex flex-col gap-1.5 flex-shrink-0">
           <div className="flex items-center justify-between text-[10px] font-bold text-white/50 uppercase tracking-wider">
             <span>Live Container Build Logs</span>
             {onViewLogs && (

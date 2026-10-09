@@ -144,3 +144,14 @@ func TestManagedRouteReservesStoppedUpstreamPort(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestStaticHTMEntrypoint(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "index.htm"), []byte("<!doctype html><h1>Hello</h1>"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	content, port, err := DetectAndGenerateDockerfile(root)
+	if err != nil || port != 8080 || !strings.Contains(content, "index index.html index.htm") {
+		t.Fatalf("HTM entry point: %v %s", err, content)
+	}
+}

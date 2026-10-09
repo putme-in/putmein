@@ -209,7 +209,7 @@ export default function DeploymentsPage() {
 
       {/* Port Allocation & Conflict Guard Overview */}
       {portRegistry && (
-        <div className="mb-6 p-4.5 rounded-2xl border border-white/[0.08] bg-[#0c0c0c] shadow-lg">
+        <div className="mb-6 p-4.5 rounded-2xl border border-card-border bg-card shadow-lg">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/[0.06]">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-blue-500/[0.1] border border-blue-500/20 text-blue-400 shrink-0">
@@ -333,7 +333,7 @@ export default function DeploymentsPage() {
             placeholder="Search deployments by name, stack, or container..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-[#0e0e0e] border border-white/[0.08] focus:border-white/20 focus:outline-none text-xs text-white placeholder:text-white/30 rounded-lg py-2 pl-9 pr-4 transition-all"
+            className="w-full bg-card border border-card-border focus:border-white/20 focus:outline-none text-xs text-white placeholder:text-white/30 rounded-lg py-2 pl-9 pr-4 transition-all"
           />
         </div>
         <span className="text-xs font-medium text-white/40">
@@ -347,7 +347,7 @@ export default function DeploymentsPage() {
           <SpinIcon /><span className="text-xs font-medium">Loading deployments...</span>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="p-12 rounded-2xl border border-white/[0.08] bg-[#0c0c0c] flex flex-col items-center justify-center text-center shadow-lg">
+        <div className="p-12 rounded-2xl border border-card-border bg-card flex flex-col items-center justify-center text-center shadow-lg">
           <div className="w-10 h-10 rounded-xl mb-3 flex items-center justify-center bg-white/[0.05] border border-white/10 text-white/60">
             <Icon icon="logos:docker-icon" width={22} height={22} />
           </div>
@@ -365,7 +365,7 @@ export default function DeploymentsPage() {
             return (
               <div
                 key={dep.id}
-                className="group rounded-2xl p-4.5 border border-white/[0.08] hover:border-white/20 bg-[#0c0c0c] hover:bg-[#101010] transition-all duration-200 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg"
+                className="group rounded-2xl p-4.5 border border-card-border hover:border-white/20 bg-card hover:bg-card transition-all duration-200 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg"
               >
                 <div className="flex items-start md:items-center gap-3.5 min-w-0">
                   {/* Large Technology Icon */}
@@ -559,7 +559,7 @@ export default function DeploymentsPage() {
           }}
         >
           <div
-            className="w-full max-w-3xl max-h-[85vh] rounded-2xl flex flex-col overflow-hidden bg-[#0c0c0c] border border-white/[0.12] shadow-2xl"
+            className="w-full max-w-3xl max-h-[85vh] rounded-2xl flex flex-col overflow-hidden bg-card border border-card-border shadow-2xl"
             style={{ boxShadow: "0 20px 60px rgba(0,0,0,0.95)" }}
           >
             {/* Modal Header */}

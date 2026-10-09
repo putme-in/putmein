@@ -191,7 +191,7 @@ export default function CicdPage() {
 
       {/* Top Overview Metrics Strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 mb-6">
-        <div className="rounded-2xl p-4 bg-[#0c0c0c] border border-white/[0.08] shadow-sm flex flex-col justify-between">
+        <div className="rounded-2xl p-4 bg-card border border-card-border shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between text-white/40 mb-2">
             <span className="text-[11px] font-bold uppercase tracking-wider">Pipelines</span>
             <Icon icon="lucide:git-branch" width={14} height={14} />
@@ -199,7 +199,7 @@ export default function CicdPage() {
           <div className="text-xl font-bold text-white tracking-tight">{stats.totalPipelines}</div>
         </div>
 
-        <div className="rounded-2xl p-4 bg-[#0c0c0c] border border-white/[0.08] shadow-sm flex flex-col justify-between">
+        <div className="rounded-2xl p-4 bg-card border border-card-border shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between text-white/40 mb-2">
             <span className="text-[11px] font-bold uppercase tracking-wider">Automated Triggers</span>
             <Icon icon="lucide:zap" width={14} height={14} className="text-amber-400" />
@@ -207,7 +207,7 @@ export default function CicdPage() {
           <div className="text-xl font-bold text-white tracking-tight">{stats.automatedCount} active</div>
         </div>
 
-        <div className="rounded-2xl p-4 bg-[#0c0c0c] border border-white/[0.08] shadow-sm flex flex-col justify-between">
+        <div className="rounded-2xl p-4 bg-card border border-card-border shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between text-white/40 mb-2">
             <span className="text-[11px] font-bold uppercase tracking-wider">Total Builds</span>
             <Icon icon="lucide:play-circle" width={14} height={14} />
@@ -215,7 +215,7 @@ export default function CicdPage() {
           <div className="text-xl font-bold text-white tracking-tight">{stats.totalRuns} runs</div>
         </div>
 
-        <div className="rounded-2xl p-4 bg-[#0c0c0c] border border-white/[0.08] shadow-sm flex flex-col justify-between">
+        <div className="rounded-2xl p-4 bg-card border border-card-border shadow-sm flex flex-col justify-between">
           <div className="flex items-center justify-between text-white/40 mb-2">
             <span className="text-[11px] font-bold uppercase tracking-wider">Success Rate</span>
             <Icon icon="lucide:check-circle-2" width={14} height={14} className="text-emerald-400" />
@@ -252,7 +252,7 @@ export default function CicdPage() {
             placeholder="Search pipelines by name, repo, or stack..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-[#0e0e0e] border border-white/[0.08] focus:border-white/20 focus:outline-none text-xs text-white placeholder:text-white/30 rounded-lg py-2 pl-9 pr-4 transition-all"
+            className="w-full bg-card border border-card-border focus:border-white/20 focus:outline-none text-xs text-white placeholder:text-white/30 rounded-lg py-2 pl-9 pr-4 transition-all"
           />
         </div>
         <span className="text-xs font-medium text-white/40">
@@ -266,7 +266,7 @@ export default function CicdPage() {
           <SpinIcon /><span className="text-xs font-medium">Loading pipelines...</span>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="p-12 rounded-2xl border border-white/[0.08] bg-[#0c0c0c] flex flex-col items-center justify-center text-center shadow-lg">
+        <div className="p-12 rounded-2xl border border-card-border bg-card flex flex-col items-center justify-center text-center shadow-lg">
           <div className="w-10 h-10 rounded-xl mb-3 flex items-center justify-center bg-white/[0.05] border border-white/10 text-white/60">
             <Icon icon="lucide:workflow" width={22} height={22} />
           </div>
@@ -293,7 +293,7 @@ export default function CicdPage() {
               <div
                 key={pipe.id}
                 onClick={() => router.push(`/cicd/${pipe.id}`)}
-                className="group cursor-pointer rounded-2xl p-4.5 border border-white/[0.08] hover:border-white/20 bg-[#0c0c0c] hover:bg-[#101010] transition-all duration-200 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg"
+                className="group cursor-pointer rounded-2xl p-4.5 border border-card-border hover:border-white/20 bg-card hover:bg-card transition-all duration-200 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg"
               >
                 <div className="flex items-start md:items-center gap-3.5 min-w-0">
                   {/* Technology Icon */}
@@ -414,7 +414,7 @@ export default function CicdPage() {
             if (e.target === e.currentTarget) setShowCreateModal(false);
           }}
         >
-          <div className="w-full max-w-md rounded-2xl p-6 bg-[#0c0c0c] border border-white/[0.12] shadow-2xl">
+          <div className="w-full max-w-md rounded-2xl p-6 bg-card border border-card-border shadow-2xl">
             <h2 className="font-jersey text-2xl text-white tracking-wide mb-1">New CI/CD Pipeline</h2>
             <p className="text-xs text-white/50 mb-5 font-normal">
               Connect an HTTPS Git repository. Save private access credentials in Settings → Git sources.

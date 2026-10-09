@@ -121,7 +121,7 @@ func generateTemplate(root string, req DeployRequest) (string, int, error) {
 					break
 				}
 			}
-		case fileExists(filepath.Join(root, "index.html")):
+		case fileExists(filepath.Join(root, "index.html")) || fileExists(filepath.Join(root, "index.htm")):
 			framework = "static"
 		default:
 			return "", 0, fmt.Errorf("cannot select a production template; choose a framework or provide a Dockerfile")
@@ -340,6 +340,6 @@ func staticRuntime(copyLine string, port int, spa bool) string {
 	if spa {
 		fallback = "/index.html"
 	}
-	command := "printf '%s\\n' 'server {' 'listen " + strconv.Itoa(port) + ";' 'listen [::]:" + strconv.Itoa(port) + ";' 'root /usr/share/nginx/html;' 'index index.html;' 'location / { try_files $uri $uri/ " + fallback + "; }' '}' > /etc/nginx/conf.d/default.conf"
+	command := "printf '%s\\n' 'server {' 'listen " + strconv.Itoa(port) + ";' 'listen [::]:" + strconv.Itoa(port) + ";' 'root /usr/share/nginx/html;' 'index index.html index.htm;' 'location / { try_files $uri $uri/ " + fallback + "; }' '}' > /etc/nginx/conf.d/default.conf"
 	return "FROM nginxinc/nginx-unprivileged:stable-alpine\nUSER root\n" + shellInstruction("RUN", command) + copyLine + "USER 101\nEXPOSE " + strconv.Itoa(port) + "\n"
 }

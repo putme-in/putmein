@@ -1,20 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import os from "os";
 import fs from "fs";
+import { getSystemMetrics } from "@/lib/system-metrics";
 import { verifyToken } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { detectContainerStack, detectProjectStack, getFrameworkVisuals } from "@/lib/project-detector";
 import { getPrimaryProjectUrl } from "@/lib/domains";
 
 const BRAIN_URL = process.env.BRAIN_URL || "http://localhost:4500";
-
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
-}
 
 export async function GET(req: NextRequest) {
   try {
@@ -25,53 +18,7 @@ export async function GET(req: NextRequest) {
     const user = await verifyToken(token);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    // 1. Live System / Server Stats
-    let diskPercent = 0;
-    let diskTotalBytes = 0;
-    let diskUsedBytes = 0;
-    try {
-      const stat = fs.statfsSync("/");
-      const blockSize = stat.bsize;
-      diskTotalBytes = stat.blocks * blockSize;
-      const freeBytes = stat.bfree * blockSize;
-      diskUsedBytes = diskTotalBytes - freeBytes;
-      diskPercent = diskTotalBytes > 0 ? Math.round((diskUsedBytes / diskTotalBytes) * 100) : 0;
-    } catch (e) {
-      console.error("Failed to read disk stats:", e);
-    }
-
-    const cpus = os.cpus();
-    const cpuCount = cpus.length || 1;
-    const cpuPercent = Math.min(100, Math.round((os.loadavg()[0] / cpuCount) * 100));
-    const totalMem = os.totalmem();
-    const freeMem = os.freemem();
-    const usedMem = totalMem - freeMem;
-    const memPercent = Math.round((usedMem / totalMem) * 100);
-
-    const uptimeSeconds = os.uptime();
-    const days = Math.floor(uptimeSeconds / (3600 * 24));
-    const hours = Math.floor((uptimeSeconds % (3600 * 24)) / 3600);
-    const minutes = Math.floor((uptimeSeconds % 3600) / 60);
-    const uptimeStr = `${days}d ${hours}h ${minutes}m`;
-    const loadAvg = os.loadavg().map((v) => Number(v.toFixed(2)));
-
-    const serverStats = {
-      name: "localhost",
-      ip: "127.0.0.1",
-      status: "online" as const,
-      os: `${os.type()} ${os.release()}`,
-      arch: os.arch(),
-      cpuModel: cpus[0]?.model || "Standard CPU",
-      cpusCount: cpuCount,
-      cpu: cpuPercent,
-      memory: memPercent,
-      disk: diskPercent,
-      uptime: uptimeStr,
-      uptimeSeconds,
-      loadAvg,
-      memoryFormatted: `${formatBytes(usedMem)} / ${formatBytes(totalMem)}`,
-      diskFormatted: `${formatBytes(diskUsedBytes)} / ${formatBytes(diskTotalBytes)}`,
-    };
+    const serverStats = { ...await getSystemMetrics(), ip: "127.0.0.1", status: "online" as const };
 
     // 2. Fetch Projects, Deployments, Alerts from Prisma (in parallel)
     const [dbProjects, dbDeployments, dbAlerts, undismissedAlertsCount, severityCounts] = await Promise.all([

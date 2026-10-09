@@ -137,7 +137,7 @@ export default function DeployDiagnosisModal({
       }}
     >
       <div
-        className="w-full max-w-2xl rounded-2xl bg-[#0c0c0c] border border-white/[0.12] shadow-2xl flex flex-col max-h-[85vh] overflow-hidden p-[20px]"
+        className="w-full max-w-2xl rounded-2xl bg-card border border-card-border shadow-2xl flex flex-col max-h-[85vh] overflow-hidden p-[20px]"
         style={{ boxShadow: "0 20px 60px rgba(0,0,0,0.9)" }}
       >
         {/* Header */}
@@ -180,7 +180,7 @@ export default function DeployDiagnosisModal({
           <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
             <div
               className="w-11 h-11 rounded-xl flex items-center justify-center text-white"
-              style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}
+              style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--color-card-border)" }}
             >
               <SpinIcon size={20} />
             </div>
@@ -221,8 +221,8 @@ export default function DeployDiagnosisModal({
             <div
               className="p-4 rounded-xl"
               style={{
-                background: "#080808",
-                border: "1px solid rgba(255,255,255,0.06)",
+                background: "var(--color-card)",
+                border: "1px solid var(--color-card-border)",
               }}
             >
               <p className="ray-eyebrow mb-1.5">Root Cause Analysis</p>
@@ -236,8 +236,8 @@ export default function DeployDiagnosisModal({
               <div
                 className="p-4 rounded-xl flex flex-col gap-2.5"
                 style={{
-                  background: "#080808",
-                  border: "1px solid rgba(255,255,255,0.06)",
+                  background: "var(--color-card)",
+                  border: "1px solid var(--color-card-border)",
                 }}
               >
                 <p className="ray-eyebrow">Recommended Remediation Plan</p>
@@ -261,7 +261,7 @@ export default function DeployDiagnosisModal({
 
                 {/* Commands Preview */}
                 {diagnosis.commands && diagnosis.commands.length > 0 && (
-                  <div className="rounded-xl p-3 overflow-x-auto mt-1" style={{ background: "#020202", border: "1px solid rgba(255,255,255,0.08)" }}>
+                  <div className="rounded-xl p-3 overflow-x-auto mt-1" style={{ background: "#020202", border: "1px solid var(--color-card-border)" }}>
                     <p className="text-[10px] uppercase font-bold tracking-wider mb-1.5 text-white/30">
                       Recommended Fix Commands
                     </p>
@@ -277,7 +277,7 @@ export default function DeployDiagnosisModal({
 
             {/* Execution / Error Logs */}
             {fixLogs && (
-              <div className="p-3.5 rounded-xl font-mono text-xs max-h-36 overflow-y-auto leading-relaxed" style={{ background: "#020202", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div className="p-3.5 rounded-xl font-mono text-xs max-h-36 overflow-y-auto leading-relaxed" style={{ background: "#020202", border: "1px solid var(--color-card-border)" }}>
                 <pre className="text-emerald-400 whitespace-pre-wrap">{fixLogs}</pre>
               </div>
             )}

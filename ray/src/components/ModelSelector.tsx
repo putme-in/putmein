@@ -484,7 +484,7 @@ export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
       {open && (
         <div
           onMouseDown={(e) => e.stopPropagation()}
-          className="absolute bottom-full mb-2.5 left-0 w-[540px] max-w-[calc(100vw-32px)] rounded-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-150 border border-white/10 bg-[#0c0c0c] shadow-2xl backdrop-blur-xl text-white font-sans"
+          className="absolute bottom-full mb-2.5 left-0 w-[540px] max-w-[calc(100vw-32px)] rounded-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-150 border border-card-border bg-card shadow-2xl backdrop-blur-xl text-white font-sans"
           style={{
             boxShadow:
               "0 -20px 50px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.06)",
@@ -515,7 +515,7 @@ export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
           {/* Mega-Menu Body: Two Columns */}
           <div className="flex h-[340px]">
             {/* Left Column: Providers List */}
-            <div className="w-[185px] border-r border-white/[0.06] p-2 flex flex-col gap-1 bg-[#080808] overflow-y-auto">
+            <div className="w-[185px] border-r border-card-border p-2 flex flex-col gap-1 bg-card overflow-y-auto">
               <div className="px-2 py-1 text-[10px] font-bold text-white/40 uppercase tracking-wider">
                 Providers
               </div>
@@ -577,7 +577,7 @@ export default function ModelSelector({ value, onChange }: ModelSelectorProps) {
             </div>
 
             {/* Right Column: Models Submenu or OpenRouter Custom Input */}
-            <div className="flex-1 flex flex-col p-3 overflow-y-auto bg-[#0c0c0c]">
+            <div className="flex-1 flex flex-col p-3 overflow-y-auto bg-card">
               <div className="px-1 py-1 mb-2.5 flex items-center justify-between border-b border-white/[0.05] pb-2">
                 <div className="flex items-center gap-2">
                   <ProviderLogo provider={currentProviderGroup.id} className="w-4 h-4" />

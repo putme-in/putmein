@@ -106,7 +106,7 @@ export default function ContainersPage() {
             placeholder="Search containers by name, image, or stack…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-[#0e0e0e] border border-white/[0.08] focus:border-white/20 focus:outline-none text-xs text-white placeholder:text-white/30 rounded-lg py-2 pl-9 pr-4 transition-all"
+            className="w-full bg-card border border-card-border focus:border-white/20 focus:outline-none text-xs text-white placeholder:text-white/30 rounded-lg py-2 pl-9 pr-4 transition-all"
           />
         </div>
         <span className="text-xs font-medium text-white/40">
@@ -120,7 +120,7 @@ export default function ContainersPage() {
           <SpinIcon /><span className="text-xs font-medium">Loading Docker containers…</span>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="p-12 rounded-2xl border border-white/[0.08] bg-[#0c0c0c] flex flex-col items-center justify-center text-center shadow-lg">
+        <div className="p-12 rounded-2xl border border-card-border bg-card flex flex-col items-center justify-center text-center shadow-lg">
           <div className="w-12 h-12 rounded-2xl mb-3 flex items-center justify-center bg-white/[0.05] border border-white/10 text-white/60">
             <Icon icon="logos:docker-icon" width={24} height={24} />
           </div>
@@ -137,7 +137,7 @@ export default function ContainersPage() {
               <div
                 key={c.id}
                 onClick={() => router.push(`/containers/${c.id}`)}
-                className="group cursor-pointer rounded-2xl p-5 border border-white/[0.08] hover:border-white/20 bg-[#0c0c0c] hover:bg-[#111111] transition-all duration-200 flex flex-col justify-between shadow-lg"
+                className="group cursor-pointer rounded-2xl p-5 border border-card-border hover:border-white/20 bg-card hover:bg-card transition-all duration-200 flex flex-col justify-between shadow-lg"
               >
                 <div>
                   <div className="flex items-start justify-between gap-3 mb-3">

@@ -309,7 +309,7 @@ export default function SecurityPage() {
 
       {/* Stats Cards Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 mb-6">
-        <div className="p-4.5 rounded-2xl bg-[#0c0c0c] border border-white/[0.08] shadow-lg">
+        <div className="p-4.5 rounded-2xl bg-card border border-card-border shadow-lg">
           <div className="flex items-center justify-between text-white/40 text-xs font-medium">
             <span>Total Security Audits</span>
             <Icon icon="lucide:file-search" className="w-4 h-4 text-white/30" />
@@ -318,7 +318,7 @@ export default function SecurityPage() {
           <div className="text-[11px] text-white/40 mt-1">Across {stats.totalProjects} registered projects</div>
         </div>
 
-        <div className="p-4.5 rounded-2xl bg-[#0c0c0c] border border-emerald-500/20 shadow-lg">
+        <div className="p-4.5 rounded-2xl bg-card border border-emerald-500/20 shadow-lg">
           <div className="flex items-center justify-between text-emerald-400 text-xs font-medium">
             <span>Clean / Passing</span>
             <Icon icon="lucide:check-circle-2" className="w-4 h-4 text-emerald-400" />
@@ -327,7 +327,7 @@ export default function SecurityPage() {
           <div className="text-[11px] text-emerald-400/60 mt-1">Passed implemented checks</div>
         </div>
 
-        <div className="p-4.5 rounded-2xl bg-[#0c0c0c] border border-amber-500/20 shadow-lg">
+        <div className="p-4.5 rounded-2xl bg-card border border-amber-500/20 shadow-lg">
           <div className="flex items-center justify-between text-amber-400 text-xs font-medium">
             <span>Warnings / Attention</span>
             <Icon icon="lucide:alert-triangle" className="w-4 h-4 text-amber-400" />
@@ -336,7 +336,7 @@ export default function SecurityPage() {
           <div className="text-[11px] text-amber-400/60 mt-1">Non-blocking recommendations</div>
         </div>
 
-        <div className="p-4.5 rounded-2xl bg-[#0c0c0c] border border-red-500/25 shadow-lg">
+        <div className="p-4.5 rounded-2xl bg-card border border-red-500/25 shadow-lg">
           <div className="flex items-center justify-between text-red-400 text-xs font-medium">
             <span>Danger / Critical</span>
             <Icon icon="lucide:shield-alert" className="w-4 h-4 text-red-400" />
@@ -371,7 +371,7 @@ export default function SecurityPage() {
 
               <div className="mt-3.5 space-y-2">
                 {blockedPipelines.map((run) => (
-                  <div key={run.id} className="p-3.5 rounded-xl bg-[#080808] border border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div key={run.id} className="p-3.5 rounded-xl bg-card border border-card-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-semibold text-white">{run.pipeline?.name}</span>
@@ -445,7 +445,7 @@ export default function SecurityPage() {
       {activeTab === "projects" && (
         <div>
           {projects.length === 0 ? (
-            <div className="p-12 rounded-2xl border border-white/[0.08] bg-[#0c0c0c] flex flex-col items-center justify-center text-center shadow-lg">
+            <div className="p-12 rounded-2xl border border-card-border bg-card flex flex-col items-center justify-center text-center shadow-lg">
               <div className="w-12 h-12 rounded-2xl mb-3 flex items-center justify-center bg-white/[0.05] border border-white/10 text-white/60">
                 <Icon icon="lucide:folder-plus" className="w-6 h-6" />
               </div>
@@ -469,7 +469,7 @@ export default function SecurityPage() {
                 return (
                   <div
                     key={proj.id}
-                    className="p-5 rounded-2xl bg-[#0c0c0c] hover:bg-[#0f0f0f] border border-white/[0.08] hover:border-white/20 transition-all flex flex-col justify-between shadow-lg group"
+                    className="p-5 rounded-2xl bg-card hover:bg-card border border-card-border hover:border-white/20 transition-all flex flex-col justify-between shadow-lg group"
                   >
                     <div>
                       <div className="flex items-start justify-between gap-3">
@@ -575,7 +575,7 @@ export default function SecurityPage() {
       {activeTab === "rules" && (
         <div className="space-y-4">
           {/* Filter Bar */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#0c0c0c] border border-white/[0.08] shadow-lg">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-2xl bg-card border border-card-border shadow-lg">
             <div className="relative w-full sm:w-80">
               <Icon icon="lucide:search" className="w-4 h-4 text-white/40 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
@@ -606,7 +606,7 @@ export default function SecurityPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {filteredRules.map((rule) => (
-              <div key={rule.id} className="p-5 rounded-2xl bg-[#0c0c0c] border border-white/[0.08] shadow-lg">
+              <div key={rule.id} className="p-5 rounded-2xl bg-card border border-card-border shadow-lg">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-white/[0.06] text-white/60 font-mono">
@@ -654,7 +654,7 @@ export default function SecurityPage() {
       {activeTab === "history" && (
         <div className="space-y-3">
           {scans.length === 0 ? (
-            <div className="p-12 rounded-2xl border border-white/[0.08] bg-[#0c0c0c] text-center text-white/40 text-xs shadow-lg">
+            <div className="p-12 rounded-2xl border border-card-border bg-card text-center text-white/40 text-xs shadow-lg">
               No audit logs recorded yet.
             </div>
           ) : (
@@ -668,7 +668,7 @@ export default function SecurityPage() {
                 <div
                   key={scan.id}
                   onClick={() => setSelectedScanReport(scan)}
-                  className="p-4.5 rounded-2xl bg-[#0c0c0c] hover:bg-[#0f0f0f] border border-white/[0.08] hover:border-white/20 transition-all cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg group"
+                  className="p-4.5 rounded-2xl bg-card hover:bg-card border border-card-border hover:border-white/20 transition-all cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-lg group"
                 >
                   <div className="flex items-center gap-3.5">
                     <div
@@ -725,7 +725,7 @@ export default function SecurityPage() {
       {/* SCAN MODAL */}
       {showScanModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0c0c0c] border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+          <div className="bg-card border border-card-border rounded-2xl w-full max-w-md p-6 shadow-2xl">
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               <Icon icon="lucide:shield-check" className="w-5 h-5 text-emerald-400" />
               Initiate Project Security Audit
@@ -776,7 +776,7 @@ export default function SecurityPage() {
       {/* REPORT DETAIL MODAL */}
       {selectedScanReport && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0c0c0c] border border-white/10 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+          <div className="bg-card border border-card-border rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Modal Header */}
             <div className="p-6 border-b border-white/[0.08] flex items-center justify-between">
               <div>

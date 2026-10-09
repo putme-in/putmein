@@ -96,7 +96,7 @@ export default function DeploymentDetailPage({
   return (
     <div className="flex-1 flex flex-col overflow-hidden font-sans">
       {/* Top Header */}
-      <div className="p-6 border-b border-white/[0.08] flex items-center justify-between gap-4 flex-shrink-0 bg-[#0c0c0c]">
+      <div className="p-6 border-b border-card-border flex items-center justify-between gap-4 flex-shrink-0 bg-card">
         <div className="flex items-center gap-4 min-w-0">
           <button
             onClick={() => router.push("/deployments")}

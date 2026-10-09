@@ -179,7 +179,7 @@ export default function ProjectsPage() {
             placeholder="Search projects by name or path..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-[#0e0e0e] border border-white/[0.08] focus:border-white/20 focus:outline-none text-xs text-white placeholder:text-white/30 rounded-lg py-2 pl-9 pr-4 transition-all"
+            className="w-full bg-card border border-card-border focus:border-white/20 focus:outline-none text-xs text-white placeholder:text-white/30 rounded-lg py-2 pl-9 pr-4 transition-all"
           />
         </div>
         <span className="text-xs font-medium text-white/40">
@@ -193,7 +193,7 @@ export default function ProjectsPage() {
           <SpinIcon /><span className="text-xs font-medium">Loading projects...</span>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="p-12 rounded-2xl border border-white/[0.08] bg-[#0c0c0c] flex flex-col items-center justify-center text-center shadow-lg">
+        <div className="p-12 rounded-2xl border border-card-border bg-card flex flex-col items-center justify-center text-center shadow-lg">
           <div className="w-10 h-10 rounded-xl mb-3 flex items-center justify-center bg-white/[0.05] border border-white/10 text-white/60">
             <FolderIcon />
           </div>
@@ -216,7 +216,7 @@ export default function ProjectsPage() {
               <div
                 key={proj.id}
                 onClick={() => router.push(`/projects/${proj.id}`)}
-                className="group cursor-pointer rounded-2xl p-5 border border-white/[0.08] hover:border-white/20 bg-[#0c0c0c] hover:bg-[#111111] transition-all duration-200 flex flex-col justify-between shadow-lg"
+                className="group cursor-pointer rounded-2xl p-5 border border-card-border hover:border-white/20 bg-card hover:bg-card transition-all duration-200 flex flex-col justify-between shadow-lg"
               >
                 <div>
                   <div className="flex items-start justify-between gap-3 mb-3">
@@ -385,7 +385,7 @@ export default function ProjectsPage() {
             if (e.target === e.currentTarget) setShowAddModal(false);
           }}
         >
-          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl p-6 bg-[#0e0e0e] border border-white/[0.12] shadow-2xl">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl p-6 bg-card border border-card-border shadow-2xl">
             <h2 className="font-semibold text-2xl text-white tracking-wide mb-1">Add Project</h2>
             <p className="text-xs text-white/50 mb-5 font-normal">
               Register a project root folder to inspect its file structure, track memory, and connect tools.

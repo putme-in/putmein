@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import LiveAppLinks from "./LiveAppLinks";
 import { Icon } from "@iconify/react";
 
 export interface PipelineFlowProps {
@@ -116,7 +117,7 @@ export default function DeploymentPipelineFlow({
   return (
     <div className="w-full flex flex-col gap-6 animate-fade-in">
       {/* ─── Main Pipeline Card (Static container without hover brightening) ─ */}
-      <div className="rounded-2xl border border-white/[0.08] bg-[#090909] p-6 shadow-xl relative overflow-hidden">
+      <div className="rounded-2xl border border-card-border bg-card p-6 shadow-xl relative overflow-hidden">
         {/* Card Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
@@ -288,17 +289,7 @@ export default function DeploymentPipelineFlow({
                 </p>
               </div>
 
-              {liveUrl && (
-                <a
-                  href={liveUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ray-btn-primary text-xs px-4 py-2 font-bold flex items-center gap-1.5 cursor-pointer shadow-lg"
-                >
-                  <span>Open Live Application</span>
-                  <Icon icon="lucide:external-link" width={13} height={13} />
-                </a>
-              )}
+              {liveUrl && <LiveAppLinks url={liveUrl} />}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-3 border-t border-emerald-500/15 text-xs text-white/60">

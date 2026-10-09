@@ -199,7 +199,7 @@ function AlertRow({ alert, onDismiss }: { alert: MonitorAlert; onDismiss: (id: s
           )}
           {expanded && alert.rawLog && (
             <pre className="mt-2 text-[11px] leading-relaxed overflow-x-auto rounded-lg p-3"
-              style={{ background: "rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.6)", fontFamily: "var(--font-mono)", maxHeight: "200px" }}>
+              style={{ background: "rgba(0,0,0,0.5)", border: "1px solid var(--color-card-border)", color: "rgba(255,255,255,0.6)", fontFamily: "var(--font-mono)", maxHeight: "200px" }}>
               {alert.rawLog}
             </pre>
           )}
@@ -382,7 +382,7 @@ function TerminalPane({
   );
 
   return (
-    <div className="rounded-xl overflow-hidden flex flex-col gap-0" style={{ border: "1px solid rgba(255,255,255,0.08)", background: "#030303" }}>
+    <div className="rounded-xl overflow-hidden flex flex-col gap-0" style={{ border: "1px solid var(--color-card-border)", background: "#030303" }}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
         <div className="flex items-center gap-2 min-w-0">
@@ -424,7 +424,7 @@ function TerminalPane({
               style={{
                 background: "rgba(255,255,255,0.06)",
                 color: "rgba(255,255,255,0.75)",
-                border: "1px solid rgba(255,255,255,0.1)",
+                border: "1px solid var(--color-card-border)",
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = "rgba(255,255,255,0.12)";
@@ -460,14 +460,14 @@ function TerminalPane({
         <div
           className="mx-3 mt-3 p-3 rounded-xl flex items-center justify-between gap-3 animate-fade-in"
           style={{
-            background: "#0c0c0c",
-            border: "1px solid rgba(255,255,255,0.1)",
+            background: "var(--color-card)",
+            border: "1px solid var(--color-card-border)",
           }}
         >
           <div className="flex items-center gap-2.5 min-w-0">
             <div
               className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-              style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}
+              style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--color-card-border)" }}
             >
               <SparklesIcon size={13} color="#fff" />
             </div>
@@ -602,8 +602,8 @@ function DiagnosisModal({
       <div
         className="w-full max-w-2xl rounded-2xl p-6 animate-fade-in-scale flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
         style={{
-          background: "#0c0c0c",
-          border: "1px solid rgba(255,255,255,0.1)",
+          background: "var(--color-card)",
+          border: "1px solid var(--color-card-border)",
           boxShadow: "0 24px 64px rgba(0,0,0,0.95)",
         }}
       >
@@ -614,7 +614,7 @@ function DiagnosisModal({
               className="w-8 h-8 rounded-xl flex items-center justify-center"
               style={{
                 background: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.1)",
+                border: "1px solid var(--color-card-border)",
               }}
             >
               <SparklesIcon size={15} color="#fff" />
@@ -639,7 +639,7 @@ function DiagnosisModal({
         {/* Content */}
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid var(--color-card-border)" }}>
               <SpinIcon size={18} />
             </div>
             <p className="text-sm font-medium text-white mt-2">Analyzing Project & Crash Trace…</p>
@@ -679,8 +679,8 @@ function DiagnosisModal({
             <div
               className="p-3.5 rounded-xl"
               style={{
-                background: "#080808",
-                border: "1px solid rgba(255,255,255,0.06)",
+                background: "var(--color-card)",
+                border: "1px solid var(--color-card-border)",
               }}
             >
               <p className="ray-eyebrow mb-1.5">Root Cause Analysis</p>
@@ -693,8 +693,8 @@ function DiagnosisModal({
             <div
               className="p-3.5 rounded-xl flex flex-col gap-2.5"
               style={{
-                background: "#080808",
-                border: "1px solid rgba(255,255,255,0.06)",
+                background: "var(--color-card)",
+                border: "1px solid var(--color-card-border)",
               }}
             >
               <p className="ray-eyebrow">Recommended Remediation Plan</p>
@@ -702,7 +702,7 @@ function DiagnosisModal({
                 {diagnosis.fixSteps.map((step, idx) => (
                   <li key={idx} className="flex items-start gap-2.5 text-xs" style={{ color: "rgba(255,255,255,0.8)" }}>
                     <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5"
-                      style={{ background: "rgba(255,255,255,0.08)", color: "#ffffff", border: "1px solid rgba(255,255,255,0.12)" }}>
+                      style={{ background: "rgba(255,255,255,0.08)", color: "#ffffff", border: "1px solid var(--color-card-border)" }}>
                       {idx + 1}
                     </span>
                     <span>{step}</span>
@@ -712,7 +712,7 @@ function DiagnosisModal({
 
               {/* Commands preview */}
               {diagnosis.commands.length > 0 && (
-                <div className="rounded-lg p-2.5 overflow-x-auto mt-1" style={{ background: "#030303", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <div className="rounded-lg p-2.5 overflow-x-auto mt-1" style={{ background: "#030303", border: "1px solid var(--color-card-border)" }}>
                   <p className="text-[10px] uppercase font-bold tracking-wider mb-1" style={{ color: "rgba(255,255,255,0.3)" }}>Commands to execute</p>
                   {diagnosis.commands.map((c, i) => (
                     <div key={i} className="text-xs text-white/90 font-mono flex items-center gap-1.5">
@@ -730,14 +730,14 @@ function DiagnosisModal({
 
             {/* Fix Logs stream if fixing */}
             {(fixing || fixLogs) && (
-              <div className="rounded-xl p-3 overflow-hidden flex flex-col gap-2" style={{ background: "#030303", border: "1px solid rgba(255,255,255,0.1)" }}>
+              <div className="rounded-xl p-3 overflow-hidden flex flex-col gap-2" style={{ background: "#030303", border: "1px solid var(--color-card-border)" }}>
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-white flex items-center gap-2">
                     {fixing && <SpinIcon size={12} />}
                     {fixing ? "Executing Fix…" : "Fix Execution Result"}
                   </span>
                 </div>
-                <pre className="text-[11px] font-mono leading-relaxed p-2 rounded max-h-48 overflow-y-auto" style={{ color: "rgba(255,255,255,0.8)", background: "#080808" }}>
+                <pre className="text-[11px] font-mono leading-relaxed p-2 rounded max-h-48 overflow-y-auto" style={{ color: "rgba(255,255,255,0.8)", background: "var(--color-card)" }}>
                   {fixLogs}
                 </pre>
               </div>
@@ -811,7 +811,7 @@ function EditModal({ project, onClose, onSaved }: { project: MonitorProject; onC
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="w-full max-w-md rounded-2xl p-6 animate-fade-in-scale"
-        style={{ background: "#080808", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 0 60px rgba(0,0,0,0.9)" }}>
+        style={{ background: "var(--color-card)", border: "1px solid var(--color-card-border)", boxShadow: "0 0 60px rgba(0,0,0,0.9)" }}>
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-white font-semibold text-lg">Edit Project</h2>
           <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg"
@@ -1290,7 +1290,7 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
                   style={{
                     background: "rgba(255,255,255,0.06)",
                     color: "rgba(255,255,255,0.75)",
-                    border: "1px solid rgba(255,255,255,0.1)",
+                    border: "1px solid var(--color-card-border)",
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.background = "rgba(255,255,255,0.12)";
@@ -1352,7 +1352,7 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
             {/* Edit */}
             <button onClick={() => setShowEdit(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-              style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.08)" }}
+              style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.6)", border: "1px solid var(--color-card-border)" }}
               onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
               onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.6)"; e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}>
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -1373,7 +1373,7 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
           { label: "Log Sources", value: String(logPaths.length), color: "#fff" },
           { label: "Active Alerts", value: String(alerts.length), color: alerts.length > 0 ? "#f97316" : "#22c55e" },
         ].map((stat) => (
-          <div key={stat.label} className="ray-card p-4" style={{ background: "#0a0a0a" }}>
+          <div key={stat.label} className="ray-card p-4" style={{ background: "var(--color-card)" }}>
             <div className="text-xl font-bold mb-1" style={{ color: stat.color }}>{stat.value}</div>
             <div className="ray-eyebrow">{stat.label}</div>
           </div>
@@ -1424,7 +1424,7 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
       {/* Run confirm dialog */}
       {showRunConfirm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl p-6" style={{ background: "#080808", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 0 60px rgba(0,0,0,0.9)" }}>
+          <div className="w-full max-w-sm rounded-2xl p-6" style={{ background: "var(--color-card)", border: "1px solid var(--color-card-border)", boxShadow: "0 0 60px rgba(0,0,0,0.9)" }}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: "rgba(234,179,8,0.1)", border: "1px solid rgba(234,179,8,0.2)" }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#eab308" strokeWidth="2" strokeLinecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -1492,7 +1492,7 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
             </div>
           )}
           {filteredAlerts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center ray-card" style={{ background: "#080808" }}>
+            <div className="flex flex-col items-center justify-center py-16 text-center ray-card" style={{ background: "var(--color-card)" }}>
               <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.15)" }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round">
                   <polyline points="20 6 9 17 4 12"/>
@@ -1518,7 +1518,7 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
         <div className="animate-fade-in">
           {/* Log command info */}
           {project.logCommand && (
-            <div className="rounded-xl px-4 py-3 mb-4" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <div className="rounded-xl px-4 py-3 mb-4" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--color-card-border)" }}>
               <p className="ray-eyebrow mb-1">Active Log Command</p>
               <code className="text-xs" style={{ color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-mono)" }}>{project.logCommand}</code>
             </div>
@@ -1529,7 +1529,7 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
             <p className="text-sm font-medium text-white">{logPaths.length} log source{logPaths.length !== 1 ? "s" : ""}</p>
             <button onClick={() => { setAddingLogPath(!addingLogPath); setLogPathError(""); setNewLogPath(""); }}
               className="flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded-lg transition-all"
-              style={{ background: addingLogPath ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.5)", border: "1px solid rgba(255,255,255,0.08)" }}
+              style={{ background: addingLogPath ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.5)", border: "1px solid var(--color-card-border)" }}
               onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
               onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.5)")}>
               <PlusIcon /> Add Log Path
@@ -1537,7 +1537,7 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
           </div>
 
           {addingLogPath && (
-            <div className="mb-4 rounded-xl p-3" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div className="mb-4 rounded-xl p-3" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--color-card-border)" }}>
               <p className="ray-eyebrow mb-2">Add Log File Path</p>
               <div className="flex gap-2">
                 <input
@@ -1575,8 +1575,8 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
           )}
 
           {logPaths.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center ray-card" style={{ background: "#080808" }}>
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div className="flex flex-col items-center justify-center py-12 text-center ray-card" style={{ background: "var(--color-card)" }}>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--color-card-border)" }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5" strokeLinecap="round">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
                 </svg>
@@ -1597,7 +1597,7 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
       {/* Memory tab */}
       {activeTab === "memory" && (
         <div className="animate-fade-in">
-          <div className="ray-card p-6" style={{ background: "#0a0a0a" }}>
+          <div className="ray-card p-6" style={{ background: "var(--color-card)" }}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="2" strokeLinecap="round">
@@ -1613,7 +1613,7 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
               {!editingMemory && memory && (
                 <button onClick={() => { setMemoryDraft(memory); setEditingMemory(true); }}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                  style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.08)" }}
+                  style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.6)", border: "1px solid var(--color-card-border)" }}
                   onMouseEnter={(e) => { e.currentTarget.style.color = "#fff"; e.currentTarget.style.background = "rgba(255,255,255,0.1)"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.6)"; e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}>
                   Edit
@@ -1666,7 +1666,7 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
           {/* Docker Container Banner */}
           {dockerContainer && (
             <div className="mb-3 p-3.5 rounded-xl flex items-center justify-between gap-3 animate-fade-in"
-              style={{ background: "#0c0c0c", border: "1px solid rgba(255,255,255,0.08)" }}>
+              style={{ background: "var(--color-card)", border: "1px solid var(--color-card-border)" }}>
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
                   style={{ background: "rgba(36,150,237,0.12)", border: "1px solid rgba(36,150,237,0.25)" }}>
@@ -1695,7 +1695,7 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
               <div className="flex items-center gap-2 flex-shrink-0">
                 <button onClick={handleRestartContainer} disabled={containerActionLoading}
                   className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                  style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.75)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                  style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.75)", border: "1px solid var(--color-card-border)" }}>
                   {containerActionLoading ? <SpinIcon size={11} /> : "Restart Container"}
                 </button>
                 <button onClick={handleStop} disabled={running}
@@ -1729,7 +1729,7 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
                       </div>
                     ) : (
                       <span className="text-[11px] px-2.5 py-1 rounded-lg"
-                        style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.4)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                        style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.4)", border: "1px solid var(--color-card-border)" }}>
                         Process stopped
                       </span>
                     )}
@@ -1743,9 +1743,9 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
               <TerminalPane projectId={project.id} logFile={activeLogFile} isLive={!!managedPid || !!dockerContainer} detectedPort={detectedPort} effectiveUrl={effectiveUrl} onDiagnose={handleOpenDiagnose} />
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-16 text-center ray-card" style={{ background: "#080808" }}>
+            <div className="flex flex-col items-center justify-center py-16 text-center ray-card" style={{ background: "var(--color-card)" }}>
               <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
-                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--color-card-border)" }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" strokeLinecap="round">
                   <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
                 </svg>
@@ -1758,7 +1758,7 @@ export default function MonitorProjectPage({ params }: { params: Promise<{ id: s
                 style={{
                   background: "rgba(255,255,255,0.06)",
                   color: "rgba(255,255,255,0.8)",
-                  border: "1px solid rgba(255,255,255,0.1)",
+                  border: "1px solid var(--color-card-border)",
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = "rgba(255,255,255,0.12)";

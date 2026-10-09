@@ -3,14 +3,6 @@
 import { useEffect, useState } from "react";
 import { getLiveSystemStats } from "./actions";
 
-const recentActivity = [
-  { action: "Deployment", detail: "app-server-v2.1 deployed successfully", time: "2m ago", status: "ok" },
-  { action: "Security Scan", detail: "No vulnerabilities detected", time: "1h ago", status: "ok" },
-  { action: "Backup", detail: "Daily backup completed (4.2 GB)", time: "3h ago", status: "ok" },
-  { action: "Alert", detail: "Memory usage spiked to 85%", time: "6h ago", status: "warn" },
-  { action: "Update", detail: "nginx 1.25.3 → 1.27.0 applied", time: "1d ago", status: "ok" },
-];
-
 function KPICard({
   label,
   value,
@@ -33,7 +25,7 @@ function KPICard({
   return (
     <div className="ray-card p-5 flex flex-col gap-3">
       <div className="flex items-center justify-between">
-        <span className="font-jersey text-sm tracking-widest" style={{ color: "rgba(255,255,255,0.2)", letterSpacing: "0.12em" }}>
+        <span className="font-sans text-sm tracking-widest" style={{ color: "rgba(255,255,255,0.6)", letterSpacing: "0.12em" }}>
           {label.toUpperCase()}
         </span>
         <div
@@ -49,8 +41,8 @@ function KPICard({
       </div>
 
       <div className="flex items-baseline gap-1">
-        <span className="font-jersey text-5xl text-white leading-none">{value}</span>
-        {unit && <span className="text-sm" style={{ color: "rgba(255,255,255,0.3)" }}>{unit}</span>}
+        <span className="font-sans text-5xl text-white leading-none">{value}</span>
+        {unit && percent !== undefined && <span className="text-sm" style={{ color: "rgba(255,255,255,0.3)" }}>{unit}</span>}
       </div>
 
       {percent !== undefined && (
@@ -61,7 +53,7 @@ function KPICard({
               style={{ width: `${percent}%`, background: getBarColor(percent) }}
             />
           </div>
-          <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.2)", fontFamily: "var(--font-mono)" }}>
+          <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.6)", fontFamily: "var(--font-mono)" }}>
             {percent}% in use
           </span>
         </div>
@@ -70,8 +62,9 @@ function KPICard({
   );
 }
 
-export default function LiveMetrics({ initialStats }: { initialStats: any }) {
+export default function LiveMetrics({ initialStats }: { initialStats: Awaited<ReturnType<typeof getLiveSystemStats>> }) {
   const [stats, setStats] = useState(initialStats);
+  const [stale, setStale] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -80,9 +73,9 @@ export default function LiveMetrics({ initialStats }: { initialStats: any }) {
       while (mounted) {
         try {
           const newStats = await getLiveSystemStats();
-          if (mounted) setStats(newStats);
+          if (mounted) { setStats(newStats); setStale(false); }
         } catch (e) {
-          console.error("Failed to fetch live stats", e);
+          if (mounted) setStale(true);
         }
         await new Promise(r => setTimeout(r, 2000));
       }
@@ -108,14 +101,14 @@ export default function LiveMetrics({ initialStats }: { initialStats: any }) {
         <div
           className="w-2 h-2 rounded-full flex-shrink-0"
           style={{
-            background: "#22c55e",
+            background: stale ? "#eab308" : "#22c55e",
             boxShadow: "0 0 8px rgba(34,197,94,0.6)",
           }}
         />
         <span className="text-sm font-medium" style={{ color: "rgba(255,255,255,0.8)" }}>
-          All systems operational
+          {stale ? "Unable to refresh — showing last readings" : "Server metrics connected"}
         </span>
-        <span className="ml-auto text-xs" style={{ color: "rgba(255,255,255,0.2)", fontFamily: "var(--font-mono)" }}>
+        <span className="ml-auto text-xs" style={{ color: "rgba(255,255,255,0.6)", fontFamily: "var(--font-mono)" }}>
           ↑ {stats.uptime}
         </span>
       </div>
@@ -123,9 +116,9 @@ export default function LiveMetrics({ initialStats }: { initialStats: any }) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4 stagger-children">
         <KPICard
           label="CPU"
-          value={stats.cpu}
+          value={stats.cpu ?? "N/A"}
           unit="%"
-          percent={stats.cpu}
+          percent={stats.cpu ?? undefined}
           icon={
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
               <rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" />
@@ -138,9 +131,9 @@ export default function LiveMetrics({ initialStats }: { initialStats: any }) {
         />
         <KPICard
           label="Memory"
-          value={stats.memory}
+          value={stats.memory ?? "N/A"}
           unit="%"
-          percent={stats.memory}
+          percent={stats.memory ?? undefined}
           icon={
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
               <path d="M6 19v-3"/><path d="M10 19v-3"/><path d="M14 19v-3"/><path d="M18 19v-3"/>
@@ -152,9 +145,9 @@ export default function LiveMetrics({ initialStats }: { initialStats: any }) {
         />
         <KPICard
           label="Disk"
-          value={stats.disk}
+          value={stats.disk ?? "N/A"}
           unit="%"
-          percent={stats.disk}
+          percent={stats.disk ?? undefined}
           icon={
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
               <ellipse cx="12" cy="5" rx="9" ry="3"/>
@@ -168,25 +161,25 @@ export default function LiveMetrics({ initialStats }: { initialStats: any }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 animate-fade-in" style={{ animationDelay: "180ms" }}>
         <div className="ray-card p-5 lg:col-span-2">
-          <h3 className="font-jersey text-xl text-white tracking-wide mb-4">Load Average</h3>
+          <h3 className="font-sans text-xl text-white tracking-wide mb-4">Load Average</h3>
           <div className="flex flex-col gap-4">
             {["1 min", "5 min", "15 min"].map((label, i) => (
               <div key={i} className="flex items-center gap-3">
-                <span className="text-[11px] w-10 flex-shrink-0" style={{ color: "rgba(255,255,255,0.25)", fontFamily: "var(--font-mono)" }}>
+                <span className="text-[11px] w-10 flex-shrink-0" style={{ color: "rgba(255,255,255,0.6)", fontFamily: "var(--font-mono)" }}>
                   {label}
                 </span>
                 <div className="flex-1 h-[2px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
                   <div
                     className="h-full rounded-full"
                     style={{
-                      width: `${(stats.loadAvg[i] / 4) * 100}%`,
+                      width: `${Math.min(100, ((stats.loadAvg?.[i] ?? 0) / Math.max(1, stats.cpusCount)) * 100)}%`,
                       background: "rgba(255,255,255,0.45)",
                       transition: "width 0.8s ease",
                     }}
                   />
                 </div>
-                <span className="font-jersey text-lg w-10 text-right text-white">
-                  {stats.loadAvg[i]}
+                <span className="font-sans text-lg w-10 text-right text-white">
+                  {stats.loadAvg?.[i] ?? "N/A"}
                 </span>
               </div>
             ))}
@@ -194,32 +187,13 @@ export default function LiveMetrics({ initialStats }: { initialStats: any }) {
         </div>
 
         <div className="ray-card p-5 lg:col-span-3">
-          <h3 className="font-jersey text-xl text-white tracking-wide mb-4">Recent Activity</h3>
-          <div className="flex flex-col gap-3">
-            {recentActivity.map((item, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <div
-                  className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                  style={{
-                    background: item.status === "ok" ? "#22c55e" : "#eab308",
-                    boxShadow: item.status === "ok"
-                      ? "0 0 6px rgba(34,197,94,0.6)"
-                      : "0 0 6px rgba(234,179,8,0.5)",
-                  }}
-                />
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs font-semibold" style={{ color: "rgba(255,255,255,0.6)" }}>
-                    {item.action}
-                  </span>
-                  <span className="text-xs" style={{ color: "rgba(255,255,255,0.25)" }}>
-                    {" · "}{item.detail}
-                  </span>
-                </div>
-                <span className="text-[11px] flex-shrink-0" style={{ color: "rgba(255,255,255,0.15)", fontFamily: "var(--font-mono)" }}>
-                  {item.time}
-                </span>
-              </div>
-            ))}
+          <h3 className="font-sans text-base font-semibold text-white mb-4">Measurement details</h3>
+          <div className="text-sm text-white/70 space-y-3">
+            <p>CPU: sampled utilization across {stats.cpusCount} logical processors.</p>
+            <p>Memory: {stats.memoryBasis}.</p>
+            <p>Disk: filesystem at {stats.diskPath}.</p>
+            <p>Scope: {stats.scope}. Containers and virtual machines may expose a limited OS view.</p>
+            <p>Updated: {new Date(stats.sampledAt).toLocaleTimeString()}</p>
           </div>
         </div>
       </div>

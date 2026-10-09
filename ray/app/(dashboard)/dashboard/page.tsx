@@ -17,12 +17,12 @@ interface ServerStats {
   arch: string;
   cpuModel: string;
   cpusCount: number;
-  cpu: number;
-  memory: number;
-  disk: number;
+  cpu: number | null;
+  memory: number | null;
+  disk: number | null;
   uptime: string;
-  uptimeSeconds: number;
-  loadAvg: number[];
+  uptimeSeconds: number | null;
+  loadAvg: number[] | null;
   memoryFormatted: string;
   diskFormatted: string;
 }
@@ -335,12 +335,12 @@ export default function DashboardPage() {
               </div>
               <div className="flex items-baseline gap-2 mb-1">
                 <span className="text-3xl font-bold tabular-nums text-white">
-                  {server?.cpu ?? 0}%
+                  {server?.cpu == null ? "N/A" : `${server.cpu}%`}
                 </span>
                 <span className="text-xs text-white/40 font-mono">CPU</span>
               </div>
               <p className="text-xs text-white/50 font-normal">
-                MEM: <span className="text-white/80 font-mono">{server?.memory ?? 0}%</span> · DISK: <span className="text-white/80 font-mono">{server?.disk ?? 0}%</span>
+                MEM: <span className="text-white/80 font-mono">{server?.memory == null ? "N/A" : `${server.memory}%`}</span> · DISK: <span className="text-white/80 font-mono">{server?.disk == null ? "N/A" : `${server.disk}%`}</span>
               </p>
             </div>
 
@@ -806,7 +806,7 @@ export default function DashboardPage() {
               <div>
                 <div className="flex items-center justify-between text-xs mb-1">
                   <span className="text-white/60 font-medium">CPU Utilization</span>
-                  <span className="font-mono text-white text-xs">{server?.cpu ?? 0}%</span>
+                  <span className="font-mono text-white text-xs">{server?.cpu == null ? "N/A" : `${server.cpu}%`}</span>
                 </div>
                 <div className="w-full h-2 rounded-full bg-white/[0.06] overflow-hidden">
                   <div
@@ -819,7 +819,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex items-center justify-between text-[10px] text-white/30 font-mono mt-1">
                   <span>Load averages</span>
-                  <span>{server?.loadAvg ? server.loadAvg.join(", ") : "0.0, 0.0, 0.0"}</span>
+                  <span>{server?.loadAvg ? server.loadAvg.join(", ") : "Unavailable"}</span>
                 </div>
               </div>
 
@@ -827,7 +827,7 @@ export default function DashboardPage() {
               <div>
                 <div className="flex items-center justify-between text-xs mb-1">
                   <span className="text-white/60 font-medium">Memory Allocation</span>
-                  <span className="font-mono text-white text-xs">{server?.memory ?? 0}%</span>
+                  <span className="font-mono text-white text-xs">{server?.memory == null ? "N/A" : `${server.memory}%`}</span>
                 </div>
                 <div className="w-full h-2 rounded-full bg-white/[0.06] overflow-hidden">
                   <div
@@ -848,7 +848,7 @@ export default function DashboardPage() {
               <div>
                 <div className="flex items-center justify-between text-xs mb-1">
                   <span className="text-white/60 font-medium">Storage Capacity</span>
-                  <span className="font-mono text-white text-xs">{server?.disk ?? 0}%</span>
+                  <span className="font-mono text-white text-xs">{server?.disk == null ? "N/A" : `${server.disk}%`}</span>
                 </div>
                 <div className="w-full h-2 rounded-full bg-white/[0.06] overflow-hidden">
                   <div

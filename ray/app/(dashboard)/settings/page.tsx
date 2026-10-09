@@ -541,7 +541,7 @@ export default function SettingsPage() {
               return (
                 <div
                   key={card.id}
-                  className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-5 shadow-lg flex flex-col justify-between"
+                  className="rounded-2xl border border-card-border bg-card p-5 shadow-lg flex flex-col justify-between"
                 >
                   <div>
                     {/* Header: Logo, Name, and Status */}
@@ -676,7 +676,7 @@ export default function SettingsPage() {
         <div
           className="ray-card p-6 mb-4"
           style={{
-            background: "#0a0a0a",
+            background: "var(--color-card)",
             border: "1px solid #1a1a1a",
             borderRadius: "12px",
           }}
@@ -916,7 +916,7 @@ export default function SettingsPage() {
         <div
           className="ray-card p-6 mb-4"
           style={{
-            background: "#0a0a0a",
+            background: "var(--color-card)",
             border: securityChecksEnabled ? "1px solid rgba(16,185,129,0.25)" : "1px solid #1a1a1a",
             borderRadius: "12px",
           }}
@@ -1012,7 +1012,7 @@ export default function SettingsPage() {
         <div
           className="ray-card p-6 mb-4"
           style={{
-            background: "#0a0a0a",
+            background: "var(--color-card)",
             border: "1px solid #1a1a1a",
             borderRadius: "12px",
           }}
@@ -1251,7 +1251,7 @@ export default function SettingsPage() {
         <div
           className="ray-card p-6 mb-4"
           style={{
-            background: "#0a0a0a",
+            background: "var(--color-card)",
             border: "1px solid #1a1a1a",
             borderRadius: "12px",
           }}
@@ -1327,7 +1327,7 @@ export default function SettingsPage() {
         <div
           className="ray-card p-6 mb-4"
           style={{
-            background: "#0a0a0a",
+            background: "var(--color-card)",
             border: "1px solid #1a1a1a",
             borderRadius: "12px",
           }}
@@ -1593,7 +1593,7 @@ export default function SettingsPage() {
         <div
           className="ray-card p-6"
           style={{
-            background: "#0a0a0a",
+            background: "var(--color-card)",
             border: "1px solid rgba(239,68,68,0.15)",
             borderRadius: "12px",
           }}
@@ -1734,7 +1734,7 @@ function GitHubSettingsCard() {
     <div
       className="ray-card p-6 mb-4"
       style={{
-        background: "#0a0a0a",
+        background: "var(--color-card)",
         border: "1px solid #1a1a1a",
         borderRadius: "12px",
       }}
@@ -1837,7 +1837,7 @@ function GitHubSettingsCard() {
             if (e.target === e.currentTarget) setShowModal(false);
           }}
         >
-          <div className="w-full max-w-md rounded-2xl p-6" style={{ background: "#0c0c0c", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 20px 60px rgba(0,0,0,0.95)" }}>
+          <div className="w-full max-w-md rounded-2xl p-6" style={{ background: "var(--color-card)", border: "1px solid var(--color-card-border)", boxShadow: "0 20px 60px rgba(0,0,0,0.95)" }}>
             <h3 className="font-jersey text-2xl text-white mb-1">Connect GitHub</h3>
             <p className="text-xs mb-4" style={{ color: "rgba(255,255,255,0.4)" }}>
               Enter your GitHub Token with repo permissions.

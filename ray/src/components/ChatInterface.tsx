@@ -224,7 +224,7 @@ export function TopProcessAccordion({
   };
 
   return (
-    <div className="mb-3.5 rounded-xl border border-white/[0.08] bg-[#0c0c0c] overflow-hidden transition-all duration-200 shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
+    <div className="mb-3.5 rounded-xl border border-card-border bg-card overflow-hidden transition-all duration-200 shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
       <button
         type="button"
         onClick={() => setUserToggled(!isOpen)}
@@ -298,7 +298,7 @@ export function TopProcessAccordion({
         <div className="px-3.5 pb-3.5 pt-2 border-t border-white/[0.06] bg-[#070707] select-text flex flex-col gap-3">
           {/* Thinking process section */}
           {hasThinking && (
-            <div className="rounded-xl bg-[#0e0e0e] border border-white/[0.06] p-3.5 shadow-sm">
+            <div className="rounded-xl bg-card border border-card-border p-3.5 shadow-sm">
               <div className="flex items-center justify-between gap-2 mb-2.5 pb-2 border-b border-white/[0.04]">
                 <div className="flex items-center gap-2 font-mono text-[10.5px] text-white/60">
                   <Icon icon="lucide:sparkles" className="w-3.5 h-3.5 text-white/70" />
@@ -353,7 +353,7 @@ export function TopProcessAccordion({
             return (
               <div
                 key={block.id || `block-${bIdx}`}
-                className="rounded-xl bg-[#090909] border border-white/[0.08] overflow-hidden shadow-xs"
+                className="rounded-xl bg-card border border-card-border overflow-hidden shadow-xs"
               >
                 <div className="flex items-center justify-between gap-2 px-3 py-2 bg-[#0d0d0d] border-b border-white/[0.04]">
                   <div className="flex items-center gap-2 min-w-0 flex-1 truncate">
@@ -602,7 +602,7 @@ export function PlanCard({
   };
 
   return (
-    <div className="w-full my-3.5 rounded-2xl overflow-hidden animate-fade-in border border-white/[0.08] bg-[#0c0c0c] shadow-2xl">
+    <div className="w-full my-3.5 rounded-2xl overflow-hidden animate-fade-in border border-card-border bg-card shadow-2xl">
       {/* Header */}
       <div className="px-4 py-3 bg-white/[0.02] border-b border-white/[0.06] flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -657,7 +657,7 @@ export function PlanCard({
             <div
               key={item.id || idx}
               onClick={() => toggleItem(idx)}
-              className="flex items-start gap-2.5 p-2.5 rounded-xl bg-[#080808] hover:bg-white/[0.04] border border-white/[0.06] hover:border-white/15 transition-all cursor-pointer group select-none"
+              className="flex items-start gap-2.5 p-2.5 rounded-xl bg-card hover:bg-white/[0.04] border border-card-border hover:border-white/15 transition-all cursor-pointer group select-none"
             >
               <div
                 className={`w-4 h-4 mt-0.5 rounded flex items-center justify-center flex-shrink-0 transition-all border ${
@@ -687,7 +687,7 @@ export function PlanCard({
       {checklist.length > 0 && <details className="px-4 pb-4"><summary className="text-xs text-white/50 cursor-pointer">Plan details</summary><div className="pt-3"><MarkdownContent content={plan.rawText} /></div></details>}
 
       {/* Action Footer */}
-      <div className="px-4 py-3 bg-[#080808] border-t border-white/[0.06] flex items-center justify-between gap-3">
+      <div className="px-4 py-3 bg-card border-t border-card-border flex items-center justify-between gap-3">
         {isDone ? (
           <>
             <span className="text-[11px] text-white/40 font-mono flex items-center gap-1.5">
@@ -918,7 +918,7 @@ function ApprovalCard({
       style={{
         width: "100%",
         background: "#111",
-        border: "1px solid rgba(255,255,255,0.08)",
+        border: "1px solid var(--color-card-border)",
         borderRadius: 8,
         padding: "12px 14px",
       }}
@@ -983,7 +983,7 @@ function ApprovalCard({
                 flex: 1,
                 padding: "6px 0",
                 borderRadius: 6,
-                border: "1px solid rgba(255,255,255,0.08)",
+                border: "1px solid var(--color-card-border)",
                 background: "transparent",
                 color: "rgba(255,255,255,0.3)",
                 fontSize: 12,
@@ -3504,7 +3504,7 @@ CRITICAL INSTRUCTIONS FOR AI:
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all duration-150"
               style={{
                 color: "rgba(255,255,255,0.3)",
-                border: "1px solid rgba(255,255,255,0.06)",
+                border: "1px solid var(--color-card-border)",
               }}
               onMouseEnter={(e) => {
                 (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.7)";
@@ -3676,7 +3676,7 @@ CRITICAL INSTRUCTIONS FOR AI:
                           }}
                           style={{
                             flex: 1, padding: "6px 0", borderRadius: 6,
-                            border: "1px solid rgba(255,255,255,0.08)", background: "transparent",
+                            border: "1px solid var(--color-card-border)", background: "transparent",
                             color: "rgba(255,255,255,0.3)", fontSize: 12, fontWeight: 500, cursor: "pointer",
                           }}
                         >
@@ -3693,7 +3693,7 @@ CRITICAL INSTRUCTIONS FOR AI:
                         msg.role === "user"
                           ? {
                             background: "rgba(255,255,255,0.08)",
-                            border: "1px solid rgba(255,255,255,0.1)",
+                            border: "1px solid var(--color-card-border)",
                             boxShadow: "0 0 16px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.08)",
                             color: "rgba(255,255,255,0.9)",
                             fontSize: "0.9375rem",
@@ -4009,7 +4009,7 @@ CRITICAL INSTRUCTIONS FOR AI:
           className="max-w-3xl mx-auto rounded-2xl transition-all duration-200 relative"
           style={{
             background: "rgba(255,255,255,0.03)",
-            border: "1px solid rgba(255,255,255,0.08)",
+            border: "1px solid var(--color-card-border)",
             boxShadow: "0 4px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05)",
           }}
           onFocus={() => { }}
@@ -4045,8 +4045,8 @@ CRITICAL INSTRUCTIONS FOR AI:
             <div
               className="absolute bottom-full left-0 right-0 mb-2 rounded-2xl overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-100"
               style={{
-                background: "#0c0c0c",
-                border: "1px solid rgba(255,255,255,0.12)",
+                background: "var(--color-card)",
+                border: "1px solid var(--color-card-border)",
                 boxShadow: "0 -10px 40px rgba(0,0,0,0.9)",
               }}
             >
@@ -4095,7 +4095,7 @@ CRITICAL INSTRUCTIONS FOR AI:
               className="absolute bottom-full left-0 right-0 mb-2 rounded-xl overflow-hidden z-50"
               style={{
                 background: "#0e0e0e",
-                border: "1px solid rgba(255,255,255,0.1)",
+                border: "1px solid var(--color-card-border)",
                 boxShadow: "0 8px 32px rgba(0,0,0,0.8)",
               }}
             >
@@ -4161,7 +4161,7 @@ CRITICAL INSTRUCTIONS FOR AI:
                     return (
                       <div
                         key="chip-execution"
-                        className="px-3 py-1.5 rounded-xl flex items-center justify-between gap-2 animate-fade-in bg-[#0c0c0c] border border-white/[0.08]"
+                        className="px-3 py-1.5 rounded-xl flex items-center justify-between gap-2 animate-fade-in bg-card border border-card-border"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <div className="w-5 h-5 rounded-md bg-white/[0.06] border border-white/10 flex items-center justify-center text-white flex-shrink-0">
@@ -4206,7 +4206,7 @@ CRITICAL INSTRUCTIONS FOR AI:
                         key="chip-deploy"
                         className="px-3 py-1.5 rounded-lg flex items-center justify-between gap-2 animate-fade-in"
                         style={{
-                          background: "#0c0c0c",
+                          background: "var(--color-card)",
                           border: isDeep ? "1px solid rgba(168,85,247,0.25)" : "1px solid rgba(16,185,129,0.25)",
                         }}
                       >
@@ -4254,7 +4254,7 @@ CRITICAL INSTRUCTIONS FOR AI:
                       <div
                         key="chip-context"
                         className="px-3 py-1.5 rounded-lg flex items-center justify-between gap-2 animate-fade-in"
-                        style={{ background: "#0c0c0c", border: "1px solid rgba(255,255,255,0.08)" }}
+                        style={{ background: "var(--color-card)", border: "1px solid var(--color-card-border)" }}
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           {selectedContext.type === "project" ? (
@@ -4306,7 +4306,7 @@ CRITICAL INSTRUCTIONS FOR AI:
                     return (
                       <div
                         key="chip-project"
-                        className="p-2.5 rounded-xl border border-white/[0.12] bg-[#0e0e0e] flex items-center justify-between gap-3 animate-in fade-in duration-150"
+                        className="p-2.5 rounded-xl border border-card-border bg-card flex items-center justify-between gap-3 animate-in fade-in duration-150"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0 text-white">

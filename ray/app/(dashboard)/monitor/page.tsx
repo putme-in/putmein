@@ -226,7 +226,7 @@ function AddProjectModal({ onClose, onAdded }: { onClose: () => void; onAdded: (
       className="fixed inset-0 z-[200] w-screen h-screen flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full max-w-md rounded-2xl p-6 bg-[#0c0c0c] border border-white/[0.12] shadow-2xl">
+      <div className="w-full max-w-md rounded-2xl p-6 bg-card border border-card-border shadow-2xl">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-white font-semibold text-lg">Add Project to Monitor</h2>
           <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-lg transition-colors"
@@ -321,7 +321,7 @@ function EditProjectModal({ project, onClose, onSaved }: { project: MonitorProje
       className="fixed inset-0 z-[200] w-screen h-screen flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full max-w-md rounded-2xl p-6 bg-[#0c0c0c] border border-white/[0.12] shadow-2xl">
+      <div className="w-full max-w-md rounded-2xl p-6 bg-card border border-card-border shadow-2xl">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-white font-semibold text-lg">Edit Project</h2>
@@ -414,7 +414,7 @@ function AlertRow({ alert, onDismiss, showProject = true }: { alert: MonitorAler
           )}
           {expanded && alert.rawLog && (
             <pre className="mt-2 text-[11px] leading-relaxed overflow-x-auto rounded-lg p-3"
-              style={{ background: "rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.6)", fontFamily: "var(--font-mono)", maxHeight: "200px" }}>
+              style={{ background: "rgba(0,0,0,0.5)", border: "1px solid var(--color-card-border)", color: "rgba(255,255,255,0.6)", fontFamily: "var(--font-mono)", maxHeight: "200px" }}>
               {alert.rawLog}
             </pre>
           )}
@@ -643,7 +643,7 @@ function ProjectDetailDrawer({
             {project.projectUrl && (
               <a href={getPrimaryProjectUrl(project.projectUrl) || project.projectUrl} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-                style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.08)", textDecoration: "none" }}
+                style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.6)", border: "1px solid var(--color-card-border)", textDecoration: "none" }}
                 onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
                 onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.6)")}
                 title="Open project URL">
@@ -652,7 +652,7 @@ function ProjectDetailDrawer({
             )}
             <button onClick={onEdit}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
-              style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.08)" }}
+              style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.6)", border: "1px solid var(--color-card-border)" }}
               onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
               onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.6)")}>
               <EditIcon /> Edit
@@ -676,7 +676,7 @@ function ProjectDetailDrawer({
               { label: "Interval", value: `Every ${project.intervalSec}s`, color: "#fff" },
               { label: "Alerts", value: String(alerts.length), color: alerts.length > 0 ? "#f97316" : "#22c55e" },
             ].map((item) => (
-              <div key={item.label} className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div key={item.label} className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid var(--color-card-border)" }}>
                 <div className="text-sm font-bold mb-1" style={{ color: item.color }}>{item.value}</div>
                 <div className="ray-eyebrow">{item.label}</div>
               </div>
@@ -695,7 +695,7 @@ function ProjectDetailDrawer({
             </div>
           )}
           {project.memoryStatus === "done" && project.memory && (
-            <div className="rounded-xl p-4" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <div className="rounded-xl p-4" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--color-card-border)" }}>
               <p className="ray-eyebrow mb-2">Project Memory</p>
               <p className="text-xs leading-relaxed" style={{ color: "rgba(255,255,255,0.5)" }}>{project.memory.slice(0, 400)}{project.memory.length > 400 ? "…" : ""}</p>
             </div>
@@ -740,7 +740,7 @@ function ProjectDetailDrawer({
                 <button
                   onClick={() => { setAddingLogPath(!addingLogPath); setLogPathError(""); setNewLogPath(""); }}
                   className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg transition-all"
-                  style={{ background: addingLogPath ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.5)", border: "1px solid rgba(255,255,255,0.08)" }}
+                  style={{ background: addingLogPath ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.5)", border: "1px solid var(--color-card-border)" }}
                   onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
                   onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.5)")}>
                   <PlusIcon /> Add Path
@@ -750,7 +750,7 @@ function ProjectDetailDrawer({
 
             {/* Add log path inline form */}
             {addingLogPath && (
-              <div className="mb-3 rounded-xl p-3" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div className="mb-3 rounded-xl p-3" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--color-card-border)" }}>
                 <p className="ray-eyebrow mb-2">Add Log File Path</p>
                 <div className="flex gap-2">
                   <input
@@ -774,7 +774,7 @@ function ProjectDetailDrawer({
             )}
 
             {logPaths.length === 0 ? (
-              <div className="py-6 rounded-xl text-center" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div className="py-6 rounded-xl text-center" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--color-card-border)" }}>
                 <p className="text-xs" style={{ color: "rgba(255,255,255,0.3)" }}>No log files discovered yet. Use "Add Path" to add manually, or wait for the next scan.</p>
               </div>
             ) : (
@@ -786,7 +786,7 @@ function ProjectDetailDrawer({
             )}
 
             {project.logCommand && (
-              <div className="mt-3 rounded-xl px-3 py-2.5" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div className="mt-3 rounded-xl px-3 py-2.5" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--color-card-border)" }}>
                 <p className="ray-eyebrow mb-1">Custom Log Command</p>
                 <code className="text-xs" style={{ color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-mono)" }}>{project.logCommand}</code>
               </div>
@@ -925,7 +925,7 @@ function ProjectCard({
         <div className="flex flex-wrap gap-1.5">
           {logPathsArr.slice(0, 4).map((path, i) => (
             <span key={i} className="text-[10px] px-2 py-0.5 rounded truncate max-w-[200px]"
-              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.35)", fontFamily: "var(--font-mono)" }}
+              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid var(--color-card-border)", color: "rgba(255,255,255,0.35)", fontFamily: "var(--font-mono)" }}
               title={path}>
               {path.split("/").pop()}
             </span>
@@ -1062,9 +1062,9 @@ export default function MonitorPage() {
               {[1, 2].map((i) => <div key={i} className="h-28 rounded-xl animate-shimmer" style={{ background: "rgba(255,255,255,0.03)" }} />)}
             </div>
           ) : projects.length === 0 ? (
-            <div className="ray-card flex flex-col items-center justify-center py-16 text-center" style={{ background: "#080808" }}>
+            <div className="ray-card flex flex-col items-center justify-center py-16 text-center" style={{ background: "var(--color-card)" }}>
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
-                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid var(--color-card-border)" }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5" strokeLinecap="round">
                   <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
                 </svg>

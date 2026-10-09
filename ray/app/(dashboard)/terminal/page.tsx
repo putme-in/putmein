@@ -51,15 +51,15 @@ export default function TerminalPage() {
         {/* System Info Chips */}
         {systemInfo && (
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#0c0c0c] border border-white/[0.08] text-[11px] font-mono text-white/70 shadow-sm">
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-card border border-card-border text-[11px] font-mono text-white/70 shadow-sm">
               <Icon icon="lucide:server" width={13} height={13} className="text-white/40" />
               <span>{systemInfo.hostname}</span>
             </div>
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#0c0c0c] border border-white/[0.08] text-[11px] font-mono text-white/70 shadow-sm">
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-card border border-card-border text-[11px] font-mono text-white/70 shadow-sm">
               <Icon icon="lucide:user" width={13} height={13} className="text-white/40" />
               <span>{systemInfo.username}</span>
             </div>
-            <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#0c0c0c] border border-white/[0.08] text-[11px] font-mono text-white/50 shadow-sm">
+            <div className="hidden md:flex items-center gap-1.5 px-3 py-1 rounded-xl bg-card border border-card-border text-[11px] font-mono text-white/50 shadow-sm">
               <Icon icon="lucide:cpu" width={13} height={13} className="text-white/40" />
               <span>{systemInfo.os}</span>
             </div>

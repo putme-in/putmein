@@ -168,8 +168,8 @@ export default function GitHubPage() {
         </div>
       ) : !status.connected ? (
         /* Not Connected View */
-        <div className="ray-card p-10 flex flex-col items-center justify-center text-center max-w-xl mx-auto" style={{ background: "#080808" }}>
-          <div className="w-14 h-14 rounded-2xl mb-4 flex items-center justify-center" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
+        <div className="ray-card p-10 flex flex-col items-center justify-center text-center max-w-xl mx-auto" style={{ background: "var(--color-card)" }}>
+          <div className="w-14 h-14 rounded-2xl mb-4 flex items-center justify-center" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid var(--color-card-border)" }}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" className="text-white">
               <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
             </svg>
@@ -203,7 +203,7 @@ export default function GitHubPage() {
           {/* Account Profile Banner */}
           <div
             className="ray-card p-4 rounded-xl flex items-center justify-between gap-4"
-            style={{ background: "#0c0c0c", border: "1px solid rgba(255,255,255,0.08)" }}
+            style={{ background: "var(--color-card)", border: "1px solid var(--color-card-border)" }}
           >
             <div className="flex items-center gap-3.5">
               <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center font-bold text-sm text-white overflow-hidden flex-shrink-0">
@@ -285,7 +285,7 @@ export default function GitHubPage() {
 
           {/* Repository Cards Grid */}
           {filteredRepos.length === 0 ? (
-            <div className="ray-card p-12 text-center text-xs text-white/35" style={{ background: "#080808" }}>
+            <div className="ray-card p-12 text-center text-xs text-white/35" style={{ background: "var(--color-card)" }}>
               No repositories match &quot;{search}&quot;.
             </div>
           ) : (
@@ -294,7 +294,7 @@ export default function GitHubPage() {
                 <div
                   key={repo.id}
                   className="ray-card p-4 rounded-xl flex flex-col justify-between gap-3 transition-all duration-150 hover:border-white/20"
-                  style={{ background: "#0c0c0c", border: "1px solid rgba(255,255,255,0.06)" }}
+                  style={{ background: "var(--color-card)", border: "1px solid var(--color-card-border)" }}
                 >
                   <div>
                     <div className="flex items-start justify-between gap-2 mb-1.5">
@@ -382,7 +382,7 @@ export default function GitHubPage() {
             if (e.target === e.currentTarget) setShowManualModal(false);
           }}
         >
-          <div className="w-full max-w-md rounded-2xl p-6" style={{ background: "#0c0c0c", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 20px 60px rgba(0,0,0,0.95)" }}>
+          <div className="w-full max-w-md rounded-2xl p-6" style={{ background: "var(--color-card)", border: "1px solid var(--color-card-border)", boxShadow: "0 20px 60px rgba(0,0,0,0.95)" }}>
             <h3 className="font-jersey text-2xl text-white mb-1">Connect GitHub with Token</h3>
             <p className="text-xs mb-4" style={{ color: "rgba(255,255,255,0.4)" }}>
               Enter your GitHub Personal Access Token with repo permissions.

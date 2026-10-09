@@ -340,6 +340,10 @@ export default function DeploymentWizard({ embedded = false, initialSource = "",
   // Trigger Container Deployment
   const handleDeploy = async () => {
     if (!analysis || analysisBusy || appDirectory !== analysis.appDirectory || !projectName.trim() || (embedded && !reviewed)) return;
+    if (setup.dockerEnabled && setup.framework === "auto" && analysis.frameworkSlug === "unknown" && !analysis.hasDockerfile) {
+      setErrorMessage(`No application entry point was detected in this folder. Choose the application subfolder, select a framework in Advanced settings, or include a Dockerfile. Files found: ${analysis.filesSummary.join(", ") || "none"}.`);
+      return;
+    }
 
     const portCheck = validateTcpPort(customPort || analysis.suggestedPort);
     if (!portCheck.valid) { setErrorMessage(portCheck.error || "Choose a valid host port"); return; }
@@ -539,6 +543,8 @@ export default function DeploymentWizard({ embedded = false, initialSource = "",
         </ol>
       </nav>
 
+      {activeStep === 2 && errorMessage && <p role="alert" className="max-w-3xl mx-auto mb-4 text-sm text-amber-300">{errorMessage}</p>}
+
       {/* ─── Centered Container ──────────────────────────────────────────────── */}
       <div className="max-w-3xl mx-auto flex flex-col gap-6">
 
@@ -547,7 +553,7 @@ export default function DeploymentWizard({ embedded = false, initialSource = "",
             Only visible when activeStep === 1
            ══════════════════════════════════════════════════════════════════════ */}
         {activeStep === 1 && (
-          <div className="rounded-2xl border border-white/[0.08] bg-[#090909] p-6 sm:p-8 animate-fade-in relative shadow-xl">
+          <div className="rounded-2xl border border-card-border bg-card p-6 sm:p-8 animate-fade-in relative shadow-xl">
             {/* Step 1 Header */}
             <div className="flex items-center justify-between gap-4 mb-5">
               <div>
@@ -613,7 +619,7 @@ export default function DeploymentWizard({ embedded = false, initialSource = "",
                 <div>
                   <p role="status" className="text-xs font-medium text-white mb-2">{flowState === "analyzing" ? "Checking project files and detecting framework…" : uploadTransferred ? "Checking and extracting uploaded files…" : "Project checks will start after upload"}</p>
                   <div role="progressbar" aria-label="Project checks" className="h-1.5 bg-white/10 rounded-full overflow-hidden relative">
-                    {(uploadTransferred || flowState === "analyzing") && <div className="absolute inset-y-0 w-1/3 bg-white/70 rounded-full animate-loading-bar motion-reduce:animate-none" />}
+                    {(uploadTransferred || flowState === "analyzing") && <div className="absolute inset-y-0 w-1/3 bg-white/70 rounded-full project-check-progress" />}
                   </div>
                   <p className="text-[11px] text-white/40 mt-2">{uploadTransferred || flowState === "analyzing" ? "The server is processing your project. Larger folders can take longer; setup opens when checks finish." : "Files stay on this page while they upload."}</p>
                 </div>
@@ -881,7 +887,7 @@ export default function DeploymentWizard({ embedded = false, initialSource = "",
         {activeStep === 2 && analysis && (
           <div className="flex flex-col gap-6 animate-fade-in">
             {/* ─── Top Banner: Detected Language & Deploy Button (FIRST) ────── */}
-            <div className="rounded-2xl border border-white/[0.08] bg-[#090909] p-6 shadow-xl relative overflow-hidden">
+            <div className="rounded-2xl border border-card-border bg-card p-6 shadow-xl relative overflow-hidden">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
                 {/* Left: Detected framework and specs */}
                 <div className="flex items-center gap-4">
@@ -949,7 +955,7 @@ export default function DeploymentWizard({ embedded = false, initialSource = "",
             )}
 
             {/* ─── Main Configuration Card (Outside Advanced) ────────────────── */}
-            <div className="rounded-2xl border border-white/[0.08] bg-[#090909] p-6 flex flex-col gap-5 shadow-xl">
+            <div className="rounded-2xl border border-card-border bg-card p-6 flex flex-col gap-5 shadow-xl">
               <span className="ray-eyebrow">Project Identity & Application Routing</span>
 
               {/* 1. Project Name */}

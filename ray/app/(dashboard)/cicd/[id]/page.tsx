@@ -255,7 +255,7 @@ export default function CicdDetailPage({
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6 font-sans">
       {/* Top Header */}
-      <div className="p-5 rounded-2xl bg-[#0c0c0c] border border-white/[0.08] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+      <div className="p-5 rounded-2xl bg-card border border-card-border shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div className="flex items-start md:items-center gap-4 min-w-0">
           <button
             onClick={() => router.push("/cicd")}
@@ -519,7 +519,7 @@ export default function CicdDetailPage({
       )}
 
       {/* Visual Pipeline DAG Stage Workflow Tracker */}
-      <div className="rounded-2xl p-6 bg-[#0c0c0c] border border-white/[0.08] shadow-sm mb-6">
+      <div className="rounded-2xl p-6 bg-card border border-card-border shadow-sm mb-6">
         <div className="flex items-center justify-between gap-4 mb-5">
           <div>
             <h2 className="font-sans font-bold text-base text-white tracking-tight">Pipeline DAG Execution Flow</h2>
@@ -574,7 +574,7 @@ export default function CicdDetailPage({
             return (
               <div
                 key={st.id}
-                className="relative rounded-2xl p-4 bg-[#111111] border transition-all flex flex-col justify-between"
+                className="relative rounded-2xl p-4 bg-card border transition-all flex flex-col justify-between"
                 style={{
                   borderColor:
                     stageState === "blocked"
@@ -655,7 +655,7 @@ export default function CicdDetailPage({
       </div>
 
       {/* GitHub Webhook Trigger & Automation Card */}
-      <div className="rounded-2xl p-6 bg-[#0c0c0c] border border-white/[0.08] shadow-sm mb-6">
+      <div className="rounded-2xl p-6 bg-card border border-card-border shadow-sm mb-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/[0.06] mb-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -729,7 +729,7 @@ export default function CicdDetailPage({
       </div>
 
       {/* Execution Run History & Live Logs Console */}
-      <div className="rounded-2xl p-6 bg-[#0c0c0c] border border-white/[0.08] shadow-sm">
+      <div className="rounded-2xl p-6 bg-card border border-card-border shadow-sm">
         <div className="flex items-center justify-between gap-4 mb-4">
           <div>
             <h2 className="font-sans font-bold text-base text-white tracking-tight">Execution Run History</h2>
@@ -741,7 +741,7 @@ export default function CicdDetailPage({
         </div>
 
         {(!pipeline?.runs || pipeline.runs.length === 0) ? (
-          <div className="p-8 rounded-xl border border-white/[0.06] bg-[#080808] text-center text-xs text-white/40">
+          <div className="p-8 rounded-xl border border-card-border bg-card text-center text-xs text-white/40">
             No pipeline runs recorded yet. Click <strong>Trigger Pipeline Run</strong> above to initiate a build.
           </div>
         ) : (
@@ -892,7 +892,7 @@ export default function CicdDetailPage({
             if (e.target === e.currentTarget) setShowSettingsModal(false);
           }}
         >
-          <div className="w-full max-w-md rounded-2xl p-6 bg-[#0c0c0c] border border-white/[0.12] shadow-2xl">
+          <div className="w-full max-w-md rounded-2xl p-6 bg-card border border-card-border shadow-2xl">
             <h2 className="font-jersey text-2xl text-white tracking-wide mb-1">Pipeline Settings</h2>
             <p className="text-xs text-white/50 mb-5 font-normal">
               Update build configuration and branch triggers for <strong>{pipeline?.name}</strong>.

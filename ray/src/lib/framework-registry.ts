@@ -31,7 +31,7 @@ export const FRAMEWORKS: FrameworkDefinition[] = [
   { slug: "php", name: "PHP", language: "PHP", port: 80, files: ["composer.json", "index.php"] },
   { slug: "python", name: "Python", language: "Python", port: 8000, files: ["requirements.txt", "pyproject.toml", "Pipfile", "setup.py"] },
   { slug: "node", name: "Node.js", language: "JavaScript", port: 3000, files: ["package.json"], startCommand: "npm start" },
-  { slug: "static", name: "Static HTML", language: "HTML", port: 8080, files: ["index.html"] },
+  { slug: "static", name: "Static HTML", language: "HTML", port: 8080, files: ["index.html", "index.htm"] },
   { slug: "docker", name: "Docker", language: "Container", port: 3000, files: ["Dockerfile"] },
 ];
 

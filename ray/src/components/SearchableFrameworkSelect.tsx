@@ -127,7 +127,7 @@ export default function SearchableFrameworkSelect({
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-1.5 z-50 rounded-xl bg-[#0c0c0c] border border-white/[0.12] shadow-2xl p-2 animate-fade-in flex flex-col max-h-72">
+        <div className="absolute top-full left-0 right-0 mt-1.5 z-50 rounded-xl bg-card border border-card-border shadow-2xl p-2 animate-fade-in flex flex-col max-h-72">
           {/* Search Input Box */}
           <div className="relative mb-2 shrink-0">
             <svg

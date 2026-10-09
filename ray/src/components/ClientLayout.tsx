@@ -200,7 +200,7 @@ function LiveDeploymentWidget({
           <div
             className="mb-3 w-[360px] sm:w-[480px] rounded-2xl overflow-hidden shadow-2xl animate-fade-in border flex flex-col select-text"
             style={{
-              background: "#0c0c0c",
+              background: "var(--color-card)",
               borderColor: isFailed ? "rgba(239, 68, 68, 0.25)" : "rgba(255, 255, 255, 0.14)",
               boxShadow: "0 20px 50px rgba(0,0,0,0.95), 0 0 0 1px rgba(255,255,255,0.06)",
             }}

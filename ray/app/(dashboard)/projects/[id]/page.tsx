@@ -1,5 +1,6 @@
 "use client";
 
+import LiveAppLinks from "@/components/LiveAppLinks";
 import { useState, useEffect, useCallback, useRef, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -863,17 +864,7 @@ export default function ProjectDetailPage({
 
         {/* Top Actions: Open App */}
         <div className="flex items-center gap-2">
-          {effectiveUrl && (
-            <a
-              href={effectiveUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="ray-btn-primary flex items-center gap-1.5 text-xs px-3.5 py-1.5 cursor-pointer"
-            >
-              <span>Open App</span>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /></svg>
-            </a>
-          )}
+          {effectiveUrl && <LiveAppLinks url={effectiveUrl} label="Open app" />}
         </div>
       </div>
 
@@ -1054,12 +1045,12 @@ export default function ProjectDetailPage({
             <div
               ref={scrollContainerRef}
               onScroll={handleScroll}
-              className="flex-1 overflow-y-auto p-6 scroll-smooth bg-[#060606]"
+              className="flex-1 overflow-y-auto p-6 scroll-smooth bg-panel-bg"
             >
               <div className="max-w-3xl mx-auto flex flex-col gap-8 pb-[60vh]">
 
                 {/* 1. GENERAL IDENTITY SECTION */}
-                <div id="section-general" className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-6 shadow-lg">
+                <div id="section-general" className="rounded-2xl border border-card-border bg-card p-6 shadow-lg">
                   <h2 className="font-sans font-bold text-lg text-white tracking-tight mb-1">Project Identity & Execution</h2>
                   <p className="text-xs text-white/50 mb-5">
                     Rename this project and inspect local root directory paths.
@@ -1122,7 +1113,7 @@ export default function ProjectDetailPage({
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {/* Container Card */}
-                    <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-5 flex flex-col justify-between shadow-lg">
+                    <div className="rounded-2xl border border-card-border bg-card p-5 flex flex-col justify-between shadow-lg">
                       <div>
                         <div className="flex items-center justify-between gap-2 mb-3">
                           <span className="text-[11px] font-bold text-white/50 uppercase tracking-wider">{project?.runtime === "host" ? "Host process" : "Container"}</span>
@@ -1169,7 +1160,7 @@ export default function ProjectDetailPage({
                     </div>
 
                     {/* CI/CD Pipeline Card */}
-                    <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-5 flex flex-col justify-between shadow-lg">
+                    <div className="rounded-2xl border border-card-border bg-card p-5 flex flex-col justify-between shadow-lg">
                       <div>
                         <div className="flex items-center justify-between gap-2 mb-3">
                           <span className="text-[11px] font-bold text-white/50 uppercase tracking-wider">CI/CD Pipeline</span>
@@ -1207,7 +1198,7 @@ export default function ProjectDetailPage({
                     </div>
 
                     {/* GitHub Account Card */}
-                    <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-5 flex flex-col justify-between shadow-lg">
+                    <div className="rounded-2xl border border-card-border bg-card p-5 flex flex-col justify-between shadow-lg">
                       <div>
                         <div className="flex items-center justify-between gap-2 mb-3">
                           <span className="text-[11px] font-bold text-white/50 uppercase tracking-wider">GitHub Account</span>
@@ -1247,7 +1238,7 @@ export default function ProjectDetailPage({
                 </div>
 
                 {/* 3. DOMAIN & NETWORK SECTION */}
-                <div id="section-domain" className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-6 shadow-lg">
+                <div id="section-domain" className="rounded-2xl border border-card-border bg-card p-6 shadow-lg">
                   <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
                     <div>
                       <h2 className="font-sans font-bold text-lg text-white tracking-tight mb-1">Domain & Port Routing</h2>
@@ -1315,6 +1306,7 @@ export default function ProjectDetailPage({
 
                   {/* Configured Domains List */}
                   <div className="mb-5 space-y-2">
+                    {effectiveUrl && <LiveAppLinks url={effectiveUrl} expanded />}
                     <div className="flex items-center justify-between">
                       <span className="text-[11px] font-bold text-white/50 uppercase font-mono tracking-wider">
                         Active Configured Domains ({parseProjectDomains(domainInput).length})
@@ -1340,7 +1332,7 @@ export default function ProjectDetailPage({
                           return (
                             <div
                               key={domain}
-                              className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[#080808] border border-white/[0.06] hover:border-white/15 transition-all"
+                              className="flex items-center justify-between gap-3 p-3 rounded-xl bg-card border border-card-border hover:border-white/15 transition-all"
                             >
                               <div className="flex items-center gap-2.5 min-w-0">
                                 {isPrimary ? (
@@ -1392,7 +1384,7 @@ export default function ProjectDetailPage({
                   {/* Quick Add Actions: sslip.io and Port */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mb-5">
                     {/* sslip.io Quick-Generate Card */}
-                    <div className="p-4.5 rounded-xl flex flex-col justify-between gap-3 bg-[#080808] border border-white/[0.08] shadow-sm">
+                    <div className="p-4.5 rounded-xl flex flex-col justify-between gap-3 bg-card border border-card-border shadow-sm">
                       <div>
                         <div className="flex items-center gap-1.5 mb-1">
                           <Icon icon="lucide:zap" className="text-white/70" width={13} height={13} />
@@ -1418,7 +1410,7 @@ export default function ProjectDetailPage({
                     </div>
 
                     {/* Allocated Port Card */}
-                    <div className="p-4.5 rounded-xl flex flex-col justify-between gap-3 bg-[#080808] border border-white/[0.08] shadow-sm">
+                    <div className="p-4.5 rounded-xl flex flex-col justify-between gap-3 bg-card border border-card-border shadow-sm">
                       <div>
                         <div className="flex items-center gap-1.5 mb-1">
                           <Icon icon="lucide:radio" className="text-white/70" width={13} height={13} />
@@ -1526,7 +1518,7 @@ export default function ProjectDetailPage({
                 </div>
 
                 {/* 4. ENVIRONMENT VARIABLES SECTION */}
-                <div id="section-env" className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-6 shadow-lg">
+                <div id="section-env" className="rounded-2xl border border-card-border bg-card p-6 shadow-lg">
                   <div className="flex items-center justify-between gap-4 mb-3">
                     <div>
                       <h2 className="font-sans font-bold text-lg text-white tracking-tight mb-1">Environment Variables (.env)</h2>
@@ -1582,7 +1574,7 @@ export default function ProjectDetailPage({
                   ) : (
                   <div className="space-y-4 mt-4">
                       {/* Add Variable Form */}
-                      <form onSubmit={handleAddEnvVar} className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 items-end p-4 rounded-xl bg-[#111111] border border-white/[0.06]">
+                      <form onSubmit={handleAddEnvVar} className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 items-end p-4 rounded-xl bg-card border border-card-border">
                         <div className="sm:col-span-2">
                           <label className="block text-[11px] font-bold text-white/50 uppercase tracking-wider mb-1">Key</label>
                           <input
@@ -1781,9 +1773,9 @@ export default function ProjectDetailPage({
 
         {/* TAB 3: AI MEMORY VIEW & EDIT */}
         {activeTab === "memory" && (
-          <div className="flex-1 overflow-y-auto p-6 bg-[#060606]">
+          <div className="flex-1 overflow-y-auto p-6 bg-panel-bg">
             <div className="max-w-3xl mx-auto">
-              <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-6 shadow-lg">
+              <div className="rounded-2xl border border-card-border bg-card p-6 shadow-lg">
                 <div className="flex items-center justify-between gap-4 mb-4">
                   <h3 className="font-sans font-bold text-base text-white flex items-center gap-2">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
@@ -1852,7 +1844,7 @@ export default function ProjectDetailPage({
                   <div>
                     {project?.memory ? (
                       <pre
-                        className="text-xs leading-relaxed whitespace-pre-wrap font-sans p-4 rounded-2xl bg-[#090909] border border-white/[0.06] text-white/85"
+                        className="text-xs leading-relaxed whitespace-pre-wrap font-sans p-4 rounded-2xl bg-card border border-card-border text-white/85"
                       >
                         {project.memory}
                       </pre>
@@ -1878,12 +1870,12 @@ export default function ProjectDetailPage({
 
         {/* TAB 4: DEPLOYMENT VIEW */}
         {activeTab === "deployment" && (
-          <div className="flex-1 overflow-y-auto p-6 bg-[#060606]">
+          <div className="flex-1 overflow-y-auto p-6 bg-panel-bg">
             <div className="max-w-4xl mx-auto flex flex-col gap-6">
               {project?.deployment ? (
                 <>
                   {/* Deployment Status Card */}
-                  <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-6 shadow-lg">
+                  <div className="rounded-2xl border border-card-border bg-card p-6 shadow-lg">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div>
                         <div className="flex items-center gap-3 flex-wrap">
@@ -1996,19 +1988,19 @@ export default function ProjectDetailPage({
 
                     {/* Quick Metadata Grid */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5 pt-5 border-t border-white/[0.06]">
-                      <div className="p-3 rounded-xl bg-[#121212] border border-white/[0.06]">
+                      <div className="p-3 rounded-xl bg-card border border-card-border">
                         <span className="block text-[10px] font-bold text-white/40 uppercase tracking-wider mb-1">{project.runtime === "host" ? "Host process" : "Docker Container"}</span>
                         <p className="text-xs font-mono text-white/90 truncate">
                           {project.runtime === "host" ? (project.managedPid ? `PID ${project.managedPid}` : "Stopped") : project.deployment.containerName || `ray-${project.deployment.name}`}
                         </p>
                       </div>
-                      <div className="p-3 rounded-xl bg-[#121212] border border-white/[0.06]">
+                      <div className="p-3 rounded-xl bg-card border border-card-border">
                         <span className="block text-[10px] font-bold text-white/40 uppercase tracking-wider mb-1">Allocated Port</span>
                         <p className="text-xs font-mono text-sky-400">
                           {project.deployment.hostPort ? `Port :${project.deployment.hostPort}` : "Dynamic"}
                         </p>
                       </div>
-                      <div className="p-3 rounded-xl bg-[#121212] border border-white/[0.06]">
+                      <div className="p-3 rounded-xl bg-card border border-card-border">
                         <span className="block text-[10px] font-bold text-white/40 uppercase tracking-wider mb-1">Live Endpoint</span>
                         {effectiveUrl ? (
                           <a href={effectiveUrl} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-emerald-400 hover:underline truncate block">
@@ -2022,7 +2014,7 @@ export default function ProjectDetailPage({
                   </div>
 
                   {/* Live Build Logs Viewer */}
-                  <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] overflow-hidden shadow-lg flex flex-col">
+                  <div className="rounded-2xl border border-card-border bg-card overflow-hidden shadow-lg flex flex-col">
                     <div className="p-4 border-b border-white/[0.06] flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="font-sans font-bold text-xs text-white">Deployment Output</span>
@@ -2047,7 +2039,7 @@ export default function ProjectDetailPage({
                 </>
               ) : (
                 /* Empty Deployment State */
-                <div className="p-12 rounded-2xl border border-white/[0.08] bg-[#0c0c0c] flex flex-col items-center justify-center text-center shadow-lg">
+                <div className="p-12 rounded-2xl border border-card-border bg-card flex flex-col items-center justify-center text-center shadow-lg">
                   <div className="w-12 h-12 rounded-2xl mb-4 flex items-center justify-center bg-white/[0.05] border border-white/10 text-white/70">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
                       <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
@@ -2078,7 +2070,7 @@ export default function ProjectDetailPage({
 
         {/* TAB 5: SECURITY AUDIT & GUARDRAILS VIEW */}
         {activeTab === "security" && (
-          <div className="flex-1 overflow-y-auto p-6 bg-[#060606]">
+          <div className="flex-1 overflow-y-auto p-6 bg-panel-bg">
             <div className="max-w-4xl mx-auto flex flex-col gap-6">
               {/* Top Security Status Header */}
               {(() => {
@@ -2120,7 +2112,7 @@ export default function ProjectDetailPage({
                                 Dual consent verified! Override authorized and deployment initiated.
                               </div>
                             ) : (
-                              <div className="mt-4 p-4 rounded-xl bg-[#080808] border border-white/[0.08] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                              <div className="mt-4 p-4 rounded-xl bg-card border border-card-border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                                 <label className="flex items-center gap-2.5 text-xs text-white/80 cursor-pointer select-none">
                                   <input
                                     type="checkbox"
@@ -2149,7 +2141,7 @@ export default function ProjectDetailPage({
                     )}
 
                     {/* Overall Project Posture Banner */}
-                    <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-6 shadow-lg">
+                    <div className="rounded-2xl border border-card-border bg-card p-6 shadow-lg">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div>
                           <div className="flex items-center gap-3 flex-wrap">
@@ -2223,7 +2215,7 @@ export default function ProjectDetailPage({
                     </div>
 
                     {/* Predefined Rules & Known CVEs Checklist */}
-                    <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-6 shadow-lg">
+                    <div className="rounded-2xl border border-card-border bg-card p-6 shadow-lg">
                       <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
                         <Icon icon="lucide:check-square" className="w-4 h-4 text-emerald-400" />
                         <span>Predefined Rules & Known CVE Checklist</span>
@@ -2276,7 +2268,7 @@ export default function ProjectDetailPage({
 
                     {/* Findings List */}
                     {findingsList.length > 0 && (
-                      <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-6 shadow-lg">
+                      <div className="rounded-2xl border border-card-border bg-card p-6 shadow-lg">
                         <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
                           <Icon icon="lucide:alert-circle" className="w-4 h-4 text-amber-400" />
                           <span>Detected Vulnerabilities ({findingsList.length})</span>
@@ -2341,7 +2333,7 @@ export default function ProjectDetailPage({
 
                     {/* Scan Audit Logs */}
                     {latestScan?.logs && (
-                      <div className="rounded-2xl border border-white/[0.08] bg-[#0c0c0c] p-6 shadow-lg">
+                      <div className="rounded-2xl border border-card-border bg-card p-6 shadow-lg">
                         <div className="flex items-center justify-between mb-3">
                           <h3 className="text-sm font-bold text-white flex items-center gap-2">
                             <Icon icon="lucide:terminal" className="w-4 h-4 text-white/40" />
