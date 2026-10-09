@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -179,6 +180,24 @@ func Analyze(ctx context.Context, req ScanRequest, baseline *Baseline) (*Securit
 		}
 		if !stat.Mode().IsRegular() {
 			return fmt.Errorf("unsupported special source file: %s", rel)
+		}
+		// Inspect content before imposing source-text limits. Media assets remain
+		// part of the deployment fingerprint, but are not source-rule input.
+		probe, err := os.Open(resolved)
+		if err != nil {
+			return fmt.Errorf("cannot open %s", rel)
+		}
+		header := make([]byte, 512)
+		n, probeErr := io.ReadFull(probe, header)
+		probe.Close()
+		if probeErr != nil && probeErr != io.EOF && probeErr != io.ErrUnexpectedEOF {
+			return fmt.Errorf("cannot read %s", rel)
+		}
+		header = header[:n]
+		mime := http.DetectContentType(header)
+		if bytes.IndexByte(header, 0) >= 0 || strings.HasPrefix(mime, "audio/") || strings.HasPrefix(mime, "video/") || strings.HasPrefix(mime, "image/") || strings.HasPrefix(mime, "font/") || mime == "application/pdf" {
+			report.ExcludedFiles++
+			return nil
 		}
 		if stat.Size() > 8*1024*1024 {
 			return fmt.Errorf("security file size limit exceeded (8 MiB): %s", rel)

@@ -136,3 +136,30 @@ func TestSecretExamplesAndOverlap(t *testing.T) {
 		}
 	}
 }
+
+func TestLargeMediaDoesNotBlockSourceScan(t *testing.T) {
+	root := t.TempDir()
+	// A binary WAV larger than the source-text budget should not consume it.
+	file, err := os.Create(filepath.Join(root, "sound.wav"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = file.Write([]byte("RIFF\x00\x00\x00\x00WAVEfmt ")); err != nil {
+		t.Fatal(err)
+	}
+	if err = file.Truncate(129 * 1024 * 1024); err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	writeSource(t, root, "app.py", "print('ready')")
+	report, baseline, err := Analyze(context.Background(), ScanRequest{ProjectPath: root}, nil)
+	if err != nil || report.Status != "passed" || report.ExcludedFiles != 1 || report.FilesScanned != 1 {
+		t.Fatalf("asset blocked: %v %+v", err, report)
+	}
+	// A media filename alone must never exempt source containing a credential.
+	writeSource(t, root, "disguised.wav", "token = 'AKIA"+strings.Repeat("A", 16)+"'")
+	report, _, err = Analyze(context.Background(), ScanRequest{ProjectPath: root}, baseline)
+	if err != nil || report.DangerCount != 1 {
+		t.Fatalf("disguised source skipped: %v %+v", err, report)
+	}
+}

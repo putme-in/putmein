@@ -9,6 +9,7 @@ import { validateTcpPort } from "@/lib/port-validator";
 import { FRAMEWORK_TEMPLATE_NOTES } from "@/lib/framework-registry";
 import DeploymentServiceFields from "@/components/DeploymentServiceFields";
 import { defaultProjectSetup, parseProjectSetup, type ProjectSetup } from "@/lib/project-setup";
+import { uploadWithProgress } from "@/lib/upload-progress";
 import DeployDiagnosisModal from "@/components/DeployDiagnosisModal";
 import SearchableFrameworkSelect from "@/components/SearchableFrameworkSelect";
 import DeploymentPipelineFlow from "@/components/DeploymentPipelineFlow";
@@ -100,6 +101,11 @@ export default function DeploymentWizard({ embedded = false, initialSource = "",
   // Flow State
   const [flowState, setFlowState] = useState<"idle" | "uploading" | "analyzing" | "ready" | "deploying" | "success" | "error">("idle");
   const [analysisBusy, setAnalysisBusy] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ loaded: number; total: number | null }>({ loaded: 0, total: null });
+  const [uploadTransferred, setUploadTransferred] = useState(false);
+  const uploadController = useRef<AbortController | null>(null);
+  useEffect(() => () => uploadController.current?.abort(), []);
+
   const [localSource, setLocalSource] = useState(false);
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
@@ -183,6 +189,12 @@ export default function DeploymentWizard({ embedded = false, initialSource = "",
 
   // Process and analyze upload
   const processUpload = async (zipFile: File | null, folderFiles: File[] | null, name: string) => {
+    uploadController.current?.abort();
+    const controller = new AbortController();
+    uploadController.current = controller;
+    setUploadProgress({ loaded: 0, total: null });
+    setUploadTransferred(false);
+
     setPreparedGit(null);
     setLocalSource(false);
     setFlowState("uploading");
@@ -208,10 +220,10 @@ export default function DeploymentWizard({ embedded = false, initialSource = "",
         throw new Error("No files selected");
       }
 
-      const uploadRes = await fetch("/api/deploy/upload", {
-        method: "POST",
-        body: formData,
-      });
+      const uploadRes = await uploadWithProgress(formData,
+        (loaded, total) => setUploadProgress({ loaded, total }),
+        () => setUploadTransferred(true), controller.signal);
+      if (controller.signal.aborted) return;
 
       const uploadData = await uploadRes.json().catch(() => ({
         error: uploadRes.status === 413
@@ -230,9 +242,11 @@ export default function DeploymentWizard({ embedded = false, initialSource = "",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectPath }),
+        signal: controller.signal,
       });
 
       const analyzeData = await analyzeRes.json();
+      if (controller.signal.aborted) return;
       if (!analyzeRes.ok) {
         throw new Error(analyzeData.error || "Codebase analysis failed");
       }
@@ -244,6 +258,7 @@ export default function DeploymentWizard({ embedded = false, initialSource = "",
       // Automatically advance to Step 2
       setActiveStep(2);
     } catch (err: unknown) {
+      if (controller.signal.aborted) return;
       console.error("Upload error:", err);
       setErrorMessage(err instanceof TypeError && /fetch|network/i.test(err.message)
         ? "The upload connection closed before the server responded. Reselect the ZIP using the file picker."
@@ -584,15 +599,23 @@ export default function DeploymentWizard({ embedded = false, initialSource = "",
 
             {/* Uploading / Analyzing Status Banner */}
             {(flowState === "uploading" || flowState === "analyzing") && (
-              <div role="status" className="mb-5 p-4 rounded-xl border border-white/[0.1] bg-white/[0.02] flex items-center gap-3 animate-pulse">
-                <SpinIcon size={16} />
-                <div className="text-xs text-white">
-                  <span className="font-semibold">
-                    {flowState === "uploading" ? "Uploading source files..." : "Analyzing codebase & framework..."}
-                  </span>
-                  <p className="text-[11px] text-white/50 mt-0.5">
-                    Extracting project manifest, detecting language, and configuring build specifications.
-                  </p>
+              <div className="mb-5 p-4 rounded-xl border border-white/10 bg-white/[0.02] space-y-4" aria-busy="true">
+                {sourceMode === "upload" && <div>
+                  <div className="flex justify-between gap-3 text-xs mb-2">
+                    <span className="font-medium text-white">{uploadTransferred || flowState === "analyzing" ? "Upload complete" : "Uploading files"}</span>
+                    <span className="text-white/60 tabular-nums">{uploadTransferred || flowState === "analyzing" ? "100%" : uploadProgress.total ? `${Math.min(99, Math.round(uploadProgress.loaded / uploadProgress.total * 100))}%` : "Preparing…"}</span>
+                  </div>
+                  <div role="progressbar" aria-label="File upload" aria-valuemin={0} aria-valuemax={100} aria-valuenow={uploadTransferred || flowState === "analyzing" ? 100 : uploadProgress.total ? Math.min(99, Math.round(uploadProgress.loaded / uploadProgress.total * 100)) : undefined} className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-400 transition-[width] duration-200 rounded-full" style={{ width: `${uploadTransferred || flowState === "analyzing" ? 100 : uploadProgress.total ? Math.min(99, uploadProgress.loaded / uploadProgress.total * 100) : 0}%` }} />
+                  </div>
+                  {!uploadTransferred && uploadProgress.loaded > 0 && <p className="text-[11px] text-white/40 mt-1">{(uploadProgress.loaded / 1048576).toFixed(1)} MB sent{uploadProgress.total ? ` of ${(uploadProgress.total / 1048576).toFixed(1)} MB` : ""}</p>}
+                </div>}
+                <div>
+                  <p role="status" className="text-xs font-medium text-white mb-2">{flowState === "analyzing" ? "Checking project files and detecting framework…" : uploadTransferred ? "Checking and extracting uploaded files…" : "Project checks will start after upload"}</p>
+                  <div role="progressbar" aria-label="Project checks" className="h-1.5 bg-white/10 rounded-full overflow-hidden relative">
+                    {(uploadTransferred || flowState === "analyzing") && <div className="absolute inset-y-0 w-1/3 bg-white/70 rounded-full animate-loading-bar motion-reduce:animate-none" />}
+                  </div>
+                  <p className="text-[11px] text-white/40 mt-2">{uploadTransferred || flowState === "analyzing" ? "The server is processing your project. Larger folders can take longer; setup opens when checks finish." : "Files stay on this page while they upload."}</p>
                 </div>
               </div>
             )}
