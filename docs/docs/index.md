@@ -42,7 +42,7 @@ curl -fsSL https://putme.in/install.sh | bash
   <TabItem value="linux" label="Linux">
 
 ```bash
-# Linux (Ubuntu, Debian, Fedora, Arch, CentOS)
+# Linux (Ubuntu, Debian, Fedora, Arch, AlmaLinux, CentOS)
 curl -fsSL https://putme.in/install.sh | bash
 ```
 

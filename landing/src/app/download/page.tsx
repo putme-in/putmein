@@ -99,7 +99,7 @@ export default function DownloadPage() {
               <div className="space-y-2 mb-6">
                 <div className="flex items-center gap-2 text-xs text-zinc-400">
                   <Check className="w-3.5 h-3.5 text-green-400" />
-                  <span>Supports Ubuntu, Debian, Fedora, Arch, Alpine, CentOS</span>
+                  <span>Supports Ubuntu, Debian, Fedora, Arch, Alpine, AlmaLinux, CentOS</span>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-zinc-400">
                   <Check className="w-3.5 h-3.5 text-green-400" />

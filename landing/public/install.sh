@@ -2,7 +2,7 @@
 
 # ==============================================================================
 # PutmeIn Universal Installation Script
-# Supports: Linux (Ubuntu, Debian, Fedora, CentOS, Arch, Alpine) & macOS & WSL
+# Supports: Linux (Ubuntu, Debian, Fedora, CentOS, AlmaLinux, Arch, Alpine) & macOS & WSL
 # ==============================================================================
 
 set -e
@@ -203,8 +203,19 @@ step "2/6" "Checking Container Runtime (Docker)..."
 
 install_docker_linux() {
   wait_for_apt_lock
-  info "Installing Docker Engine via official convenience script..."
-  run_elevated sh -c "curl -fsSL https://get.docker.com | sh"
+  local distro_id=""
+  if [ -r /etc/os-release ]; then
+    distro_id=$(. /etc/os-release; printf '%s' "$ID")
+  fi
+  if [ "$distro_id" = "almalinux" ]; then
+    info "Installing Docker Engine from the official CentOS repository for AlmaLinux..."
+    run_elevated dnf install -y dnf-plugins-core
+    run_elevated dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+    run_elevated dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  else
+    info "Installing Docker Engine via official convenience script..."
+    run_elevated sh -c "curl -fsSL https://get.docker.com | sh"
+  fi
   if [ -n "$SUDO_USER" ]; then
     run_elevated usermod -aG docker "$SUDO_USER" || true
   elif [ "$USER" != "root" ]; then

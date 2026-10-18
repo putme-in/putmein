@@ -22,7 +22,7 @@ Before developing or contributing to PutmeIn, ensure your workstation meets the 
 | **Git** | `>= 2.30` | Latest | Version control and collaborative workflows. |
 
 :::tip Operating System Compatibility
-PutmeIn actively supports **macOS** (Apple Silicon and Intel), **Linux** (Debian, Ubuntu, Arch, Fedora, CentOS), and **Windows** (via native PowerShell or WSL2).
+PutmeIn actively supports **macOS** (Apple Silicon and Intel), **Linux** (Debian, Ubuntu, Arch, Fedora, AlmaLinux, CentOS), and **Windows** (via native PowerShell or WSL2).
 :::
 
 ---
